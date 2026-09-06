@@ -15,6 +15,7 @@
       <div id="lap">LAP 1 / 3</div>
       <div id="place">1st</div>
     </div>
+    <button id="hud-restart-btn" class="hud-icon-btn" aria-label="Restart race" title="Restart race">&#8635;</button>
     <div id="hud-top-right">
       <div id="timer">00:00.00</div>
     </div>
@@ -51,11 +52,12 @@
   <div id="results" class="hidden">
     <h1>Race Finished!</h1>
     <ol id="results-list"></ol>
-    <p class="hint">Press <b>R</b> to race again</p>
+    <button id="results-play-again-btn" class="tilt-btn mp-primary">Play Again</button>
+    <button id="results-menu-btn" class="tilt-btn hidden">Back to Menu</button>
   </div>
 
   <div id="intro">
-    <div id="intro-main">
+    <div id="screen-menu" class="mp-panel">
       <h1>KART RUSH</h1>
       <p>A Super&nbsp;Tux&nbsp;Kart&#8209;style arcade racer</p>
       <div class="controls" id="controls-keyboard">
@@ -68,8 +70,21 @@
         <div><b>GAS / BRAKE</b> bottom&#8209;right</div>
         <div><b>&#9664; &#9654;</b> Steer, bottom&#8209;left</div>
         <div><b>DRIFT</b> hold + steer for a mini&#8209;turbo</div>
-        <div><b>Tilt</b> optional &mdash; toggle below</div>
+        <div><b>Tilt</b> optional &mdash; choose next</div>
       </div>
+      <div id="menu-buttons">
+        <button id="menu-solo-btn" class="tilt-btn mp-primary">Race vs Computer</button>
+        <div class="mp-divider">or race friends</div>
+        <div class="mp-menu-buttons">
+          <button id="mp-host-btn" class="tilt-btn">Host Race</button>
+          <button id="mp-join-btn" class="tilt-btn">Join Race</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="screen-kart-select" class="mp-panel hidden">
+      <h2>Choose Your Kart</h2>
+      <div id="kart-swatches"></div>
       <div id="difficulty-picker">
         <span class="difficulty-label">CPU Difficulty</span>
         <div class="difficulty-options">
@@ -79,15 +94,8 @@
         </div>
       </div>
       <button id="tilt-toggle-intro" class="tilt-btn" hidden>Tilt Steering: Off</button>
-      <button id="start-btn">Start Race</button>
-
-      <div id="mp-menu">
-        <div class="mp-divider">or race friends</div>
-        <div class="mp-menu-buttons">
-          <button id="mp-host-btn" class="tilt-btn">Host Race</button>
-          <button id="mp-join-btn" class="tilt-btn">Join Race</button>
-        </div>
-      </div>
+      <button id="kart-select-continue-btn" class="tilt-btn mp-primary">Continue</button>
+      <button id="kart-select-back-btn" class="tilt-btn">Back</button>
     </div>
 
     <div id="mp-host-panel" class="mp-panel hidden">

@@ -55,9 +55,10 @@ class NetSession {
     this.onPlayerLeft = null; // (kartIndex) => void
     this.onSnapshot = null; // (kartsState[]) => void  — client only
     this.onHostState = null; // (kartIndex, state) => void — host only
+    this.onPlayerColor = null; // (kartIndex, colorHex) => void — host only
     this.onConnected = null; // (myKartIndex) => void — client only
     this.onError = null; // (message) => void
-    this.onHostStart = null; // () => void — client only
+    this.onHostStart = null; // (colors) => void — client only, colors: {kartIndex: hex}
     this.onHostReady = null; // (code) => void — host only, fires once the code is live
   }
 
@@ -95,6 +96,7 @@ class NetSession {
         const entry = this.clientConns.find(c => c.conn === conn);
         if (entry) entry.lastSeen = Date.now(); // any message counts, not just 'state' — see the ping below
         if (data.type === 'state') this.onHostState && this.onHostState(slot, data.state);
+        else if (data.type === 'color') this.onPlayerColor && this.onPlayerColor(slot, data.color);
       });
       conn.on('close', () => this._dropClient(conn, slot));
     });
@@ -149,7 +151,7 @@ class NetSession {
         } else if (data.type === 'snapshot') {
           this.onSnapshot && this.onSnapshot(data.karts, data.humanSlots);
         } else if (data.type === 'start') {
-          this.onHostStart && this.onHostStart();
+          this.onHostStart && this.onHostStart(data.colors);
         }
       });
       conn.on('close', () => { if (settled) this.onError && this.onError('Lost connection to the host.'); });
@@ -162,15 +164,19 @@ class NetSession {
     if (this.hostConn && this.hostConn.open) this.hostConn.send({ type: 'state', state });
   }
 
+  sendColor(colorHex) {
+    if (this.hostConn && this.hostConn.open) this.hostConn.send({ type: 'color', color: colorHex });
+  }
+
   broadcastSnapshot(kartsState, humanSlots) {
     for (const { conn } of this.clientConns) {
       if (conn.open) conn.send({ type: 'snapshot', karts: kartsState, humanSlots });
     }
   }
 
-  broadcastStart() {
+  broadcastStart(colors) {
     for (const { conn } of this.clientConns) {
-      if (conn.open) conn.send({ type: 'start' });
+      if (conn.open) conn.send({ type: 'start', colors });
     }
   }
 

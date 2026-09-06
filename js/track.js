@@ -48,11 +48,14 @@ class Track {
     this.width = 15;
     this.segments = 440;
 
+    // Two gentle hill climbs around the loop (start/finish and the far
+    // chicane stay flat so the line and the pit-straight collision math
+    // don't have to account for slope). y is elevation.
     const rawPoints = [
-      [0, -105], [60, -126], [122, -102], [156, -48], [172, -14], [150, 20],
-      [99, 51], [68, 24], [34, 34], [7, 71], [-48, 99], [-109, 78],
-      [-150, 17], [-165, -18], [-143, -54], [-95, -99], [-41, -85],
-    ].map(([x, z]) => new THREE.Vector3(x, 0, z));
+      [0, 0, -105], [60, 5, -126], [122, 11, -102], [156, 15, -48], [172, 10, -14], [150, 4, 20],
+      [99, 0, 51], [68, 0, 24], [34, 0, 34], [7, 0, 71], [-48, 6, 99], [-109, 11, 78],
+      [-150, 6, 17], [-165, 0, -18], [-143, 0, -54], [-95, 0, -99], [-41, 0, -85],
+    ].map(([x, y, z]) => new THREE.Vector3(x, y, z));
 
     this.curve = new THREE.CatmullRomCurve3(rawPoints, true, 'catmullrom', 0.5);
 
@@ -72,6 +75,7 @@ class Track {
     this._buildScenery();
     this._buildMountains();
     this._buildBoostPads();
+    this._buildObstacles();
   }
 
   _buildGround() {
@@ -126,7 +130,7 @@ class Track {
       const side = this.sides[idx];
       const left = new THREE.Vector3().copy(p).addScaledVector(side, half);
       const right = new THREE.Vector3().copy(p).addScaledVector(side, -half);
-      positions.push(left.x, 0.02, left.z, right.x, 0.02, right.z);
+      positions.push(left.x, left.y + 0.02, left.z, right.x, right.y + 0.02, right.z);
       const v = i / 8;
       uvs.push(0, v, 1, v);
     }
@@ -164,7 +168,7 @@ class Track {
         const p = this.points[idx];
         const side = this.sides[idx];
         const base = new THREE.Vector3().copy(p).addScaledVector(side, half * sign);
-        positions.push(base.x, 0.12, base.z, base.x, 0.75, base.z);
+        positions.push(base.x, base.y + 0.12, base.z, base.x, base.y + 0.75, base.z);
         const u = i / 6;
         uvs.push(u, 0, u, 1);
       }
@@ -204,7 +208,7 @@ class Track {
     mesh.rotation.x = -Math.PI / 2;
     const angle = Math.atan2(tangent.x, tangent.z);
     mesh.rotation.z = -angle;
-    mesh.position.set(p.x, 0.08, p.z);
+    mesh.position.set(p.x, p.y + 0.08, p.z);
     this.group.add(mesh);
 
     // start banner posts
@@ -214,7 +218,7 @@ class Track {
         new THREE.MeshLambertMaterial({ color: 0xffffff })
       );
       const pos = new THREE.Vector3().copy(p).addScaledVector(side, sign * (this.width / 2 + 1));
-      post.position.set(pos.x, 2.5, pos.z);
+      post.position.set(pos.x, p.y + 2.5, pos.z);
       this.group.add(post);
     });
   }
@@ -328,9 +332,44 @@ class Track {
       const p = this.points[idx];
       const mesh = new THREE.Mesh(geo, mat.clone());
       mesh.rotation.x = Math.PI / 2;
-      mesh.position.set(p.x, 0.5, p.z);
+      mesh.position.set(p.x, p.y + 0.5, p.z);
       this.group.add(mesh);
       this.boostPads.push({ mesh, index: idx, position: p.clone(), active: true, cooldown: 0 });
+    }
+  }
+
+  _buildObstacles() {
+    this.obstacles = [];
+    this.obstacleRadius = 0.75;
+    const N = this.segments;
+    const obstacleCount = 8;
+    const step = Math.floor(N / obstacleCount);
+    const bootPadIndices = new Set(this.boostPads.map(p => p.index));
+
+    const coneGeo = new THREE.ConeGeometry(0.55, 1.1, 10);
+    const coneMat = new THREE.MeshLambertMaterial({ color: 0xff6a00 });
+    const baseGeo = new THREE.CylinderGeometry(0.62, 0.62, 0.14, 10);
+    const baseMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+
+    for (let i = 0; i < obstacleCount; i++) {
+      let idx = (i * step + Math.floor(step * 0.4)) % N;
+      if (idx === 0 || bootPadIndices.has(idx)) idx = (idx + 5) % N;
+      const p = this.points[idx];
+      const side = this.sides[idx];
+      const lateral = (i % 2 === 0 ? 1 : -1) * (this.width / 2 - 3.5);
+      const pos = new THREE.Vector3().copy(p).addScaledVector(side, lateral);
+
+      const group = new THREE.Group();
+      const cone = new THREE.Mesh(coneGeo, coneMat);
+      cone.position.y = 0.62;
+      cone.castShadow = true;
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = 0.07;
+      group.add(cone, base);
+      group.position.set(pos.x, pos.y, pos.z);
+      this.group.add(group);
+
+      this.obstacles.push({ mesh: group, position: pos.clone(), radius: this.obstacleRadius });
     }
   }
 
@@ -344,7 +383,7 @@ class Track {
           pad.mesh.visible = true;
         }
       } else {
-        pad.mesh.position.y = 0.5 + Math.sin(performance.now() / 300 + pad.index) * 0.15;
+        pad.mesh.position.y = pad.position.y + 0.5 + Math.sin(performance.now() / 300 + pad.index) * 0.15;
       }
     }
   }

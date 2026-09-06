@@ -59,7 +59,7 @@ function buildKartMesh(bodyColor) {
     wheels.push(w);
   }
 
-  return { group, wheels, frontWheels: [wheels[0], wheels[1]] };
+  return { group, wheels, frontWheels: [wheels[0], wheels[1]], body, nose };
 }
 
 class Kart {
@@ -69,6 +69,8 @@ class Kart {
     this.mesh = model.group;
     this.wheels = model.wheels;
     this.frontWheels = model.frontWheels;
+    this.bodyMesh = model.body;
+    this.noseMesh = model.nose;
 
     const heading = Math.atan2(startTangent.x, startTangent.z);
     const side = new THREE.Vector3(Math.cos(heading), 0, -Math.sin(heading));
@@ -97,7 +99,7 @@ class Kart {
   }
 
   _syncMesh() {
-    this.mesh.position.set(this.position.x, 0, this.position.z);
+    this.mesh.position.set(this.position.x, this.position.y, this.position.z);
     this.mesh.rotation.y = this.heading;
   }
 
@@ -120,6 +122,12 @@ class Kart {
     this.lastIndex = index;
     const lateral = track.lateralOffset(this.position, index);
     this._offTrack = Math.abs(lateral) > track.width / 2 + 0.2;
+    this.position.y = track.points[index].y; // follow the road's elevation — hills, not free 3D physics
+
+    // Climbing costs top speed, descending gives some back — tangent.y is
+    // small for these gentle grades (a few percent), so this stays a light
+    // touch rather than a hill you can stall out on.
+    const slope = track.tangents[index].y * (this.speed >= 0 ? 1 : -1);
 
     // Drift & mini-turbo
     const wantsDrift = driftHeld && Math.abs(steerInput) > 0.3 && this.speed > 6;
@@ -139,6 +147,7 @@ class Kart {
     const boosted = this.boostTimer > 0;
 
     let effectiveMax = P.maxSpeed * (boosted ? this.boostMultiplier : 1) * (this.aiSkill || 1);
+    effectiveMax *= THREE.MathUtils.clamp(1 - slope * 1.5, 0.7, 1.2);
     if (this._offTrack) effectiveMax *= P.offTrackFactor;
 
     if (throttle > 0) {
@@ -205,6 +214,11 @@ class Kart {
     return this.laps * 100000 + (this.lastIndex || 0);
   }
 
+  setColor(hex) {
+    this.bodyMesh.material.color.setHex(hex);
+    this.noseMesh.material.color.setHex(hex);
+  }
+
   setDifficulty(skillMin, skillMax, lookaheadMin, lookaheadMax) {
     this.aiSkill = skillMin + Math.random() * (skillMax - skillMin);
     this.aiLookahead = lookaheadMin + Math.floor(Math.random() * (lookaheadMax - lookaheadMin + 1));
@@ -237,6 +251,7 @@ class Kart {
     const { index } = track.nearestIndex(this.position, this.lastIndex);
     this.lastIndex = index;
     this._offTrack = Math.abs(track.lateralOffset(this.position, index)) > track.width / 2 + 0.2;
+    this.position.y = track.points[index].y;
 
     for (const w of this.wheels) w.rotation.x -= this.speed * (1 / 60) * 2.2;
     this._syncMesh();
@@ -297,6 +312,36 @@ function resolveKartCollisions(karts, movable = null) {
         b.speed *= 0.8;
         b._syncMesh();
       }
+    }
+  }
+}
+
+// Track obstacles (cones) never move — hitting one only ever pushes and
+// slows the kart, same restitution feel as a kart-kart bump. `movable`
+// restricts which kart indices are checked at all, matching
+// resolveKartCollisions' convention (null = check every kart).
+function resolveObstacleCollisions(karts, obstacles, movable = null) {
+  for (let i = 0; i < karts.length; i++) {
+    if (movable !== null && !movable.has(i)) continue;
+    const k = karts[i];
+    for (const obs of obstacles) {
+      const dx = k.position.x - obs.position.x;
+      const dz = k.position.z - obs.position.z;
+      const dist = Math.hypot(dx, dz);
+      const minDist = KART_RADIUS + obs.radius;
+      if (dist >= minDist || dist < 1e-4) continue;
+
+      const nx = dx / dist;
+      const nz = dz / dist;
+      const overlap = minDist - dist;
+      k.position.x += nx * overlap;
+      k.position.z += nz * overlap;
+
+      const impulse = Math.min(BUMP_RESTITUTION, Math.max(Math.abs(k.speed), 4) * 0.6);
+      k.bumpVelocity.x += nx * impulse;
+      k.bumpVelocity.z += nz * impulse;
+      k.speed *= 0.6;
+      k._syncMesh();
     }
   }
 }

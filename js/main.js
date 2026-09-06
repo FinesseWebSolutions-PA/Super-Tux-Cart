@@ -56,6 +56,7 @@ const track = new Track();
 scene.add(track.group);
 
 const KART_COLORS = [0xd6322c, 0x2f6fd6, 0x3ca35c, 0x8a3ccf];
+const KART_COLOR_PALETTE = [0xd6322c, 0x2f6fd6, 0x3ca35c, 0x8a3ccf, 0xff8c1a, 0x1ac9c9];
 const N = track.segments;
 const karts = [];
 for (let i = 0; i < 1 + AI_COUNT; i++) {
@@ -104,7 +105,7 @@ for (const btn of document.querySelectorAll('.difficulty-btn')) {
   });
 }
 
-// ---------------- Multiplayer lobby ----------------
+// ---------------- Menu / kart select / multiplayer lobby ----------------
 // Host-relay model: everyone connects only to the host, never to each
 // other. `humanSlots` names which kart indices are driven by a real
 // person (the host's own slot 0 is implied, not included) — the host
@@ -115,8 +116,12 @@ let myKartIndex = 0;
 let humanSlots = new Set();
 let latestClientStates = {}; // host only: slot -> last received state
 let latestSnapshot = null; // client only: last received {karts, humanSlots}
+let slotColors = {}; // host only: slot -> chosen color hex, for connected humans
+let pendingFlow = null; // 'solo' | 'host' | 'join' — which path kart-select was entered from
+let myKartColor = KART_COLOR_PALETTE[0];
 
-const introMainEl = document.getElementById('intro-main');
+const screenMenu = document.getElementById('screen-menu');
+const screenKartSelect = document.getElementById('screen-kart-select');
 const mpHostPanel = document.getElementById('mp-host-panel');
 const mpJoinPanel = document.getElementById('mp-join-panel');
 const mpWaitingPanel = document.getElementById('mp-waiting-panel');
@@ -124,19 +129,49 @@ const mpCodeEl = document.getElementById('mp-code');
 const mpSlotsEl = document.getElementById('mp-slots');
 const mpJoinStatusEl = document.getElementById('mp-join-status');
 const mpMySlotEl = document.getElementById('mp-my-slot');
+const difficultyPickerEl = document.getElementById('difficulty-picker');
+const kartSwatchesEl = document.getElementById('kart-swatches');
+const ALL_SCREENS = [screenMenu, screenKartSelect, mpHostPanel, mpJoinPanel, mpWaitingPanel];
 
-function showMpPanel(panel) {
-  for (const p of [introMainEl, mpHostPanel, mpJoinPanel, mpWaitingPanel]) p.classList.add('hidden');
-  panel.classList.remove('hidden');
+function showScreen(screen) {
+  for (const s of ALL_SCREENS) s.classList.add('hidden');
+  screen.classList.remove('hidden');
 }
+
+function hexToCss(hex) { return '#' + hex.toString(16).padStart(6, '0'); }
+
+function renderKartSwatches() {
+  kartSwatchesEl.innerHTML = '';
+  for (const color of KART_COLOR_PALETTE) {
+    const btn = document.createElement('button');
+    btn.className = 'kart-swatch' + (color === myKartColor ? ' selected' : '');
+    btn.style.setProperty('--kart-color', hexToCss(color));
+    btn.setAttribute('aria-label', 'Choose this kart color');
+    btn.addEventListener('click', () => { myKartColor = color; renderKartSwatches(); });
+    kartSwatchesEl.appendChild(btn);
+  }
+}
+renderKartSwatches();
 
 function renderHostSlots() {
   mpSlotsEl.innerHTML = '';
   for (let i = 0; i < karts.length; i++) {
     const li = document.createElement('li');
-    if (i === 0) { li.textContent = 'Player 1 — You (Host)'; li.className = 'filled'; }
-    else if (humanSlots.has(i)) { li.textContent = `Player ${i + 1} — Connected`; li.className = 'filled'; }
-    else { li.textContent = `Player ${i + 1} — CPU`; li.className = 'empty'; }
+    const dot = document.createElement('span');
+    dot.className = 'slot-dot';
+    if (i === 0) {
+      dot.style.background = hexToCss(myKartColor);
+      li.append(dot, 'Player 1 — You (Host)');
+      li.className = 'filled';
+    } else if (humanSlots.has(i)) {
+      dot.style.background = hexToCss(slotColors[i] ?? KART_COLORS[i]);
+      li.append(dot, `Player ${i + 1} — Connected`);
+      li.className = 'filled';
+    } else {
+      dot.style.background = hexToCss(KART_COLORS[i]);
+      li.append(dot, `Player ${i + 1} — CPU`);
+      li.className = 'empty';
+    }
     mpSlotsEl.appendChild(li);
   }
 }
@@ -148,54 +183,110 @@ function teardownNet() {
   humanSlots = new Set();
   latestClientStates = {};
   latestSnapshot = null;
+  slotColors = {};
   player = karts[0];
 }
 
-document.getElementById('mp-host-btn').addEventListener('click', () => {
+function returnToMenu() {
   teardownNet();
-  netSession = new NetSession();
-  humanSlots = new Set();
-  showMpPanel(mpHostPanel);
-  mpCodeEl.textContent = '.....';
-  renderHostSlots();
+  hud.classList.remove('active');
+  touchControlsEl.classList.remove('active');
+  resultsEl.classList.add('hidden');
+  gameState = 'intro';
+  introEl.classList.remove('hidden');
+  showScreen(screenMenu);
+}
 
-  netSession.onHostReady = (code) => { mpCodeEl.textContent = code; };
-  netSession.onError = (msg) => { showToast(msg); showMpPanel(introMainEl); teardownNet(); };
-  netSession.onPlayerJoined = (slot) => { humanSlots.add(slot); renderHostSlots(); };
-  netSession.onPlayerLeft = (slot) => {
-    humanSlots.delete(slot);
-    delete latestClientStates[slot];
-    applyDifficultyToSlot(slot, currentDifficulty);
+document.getElementById('menu-solo-btn').addEventListener('click', () => {
+  pendingFlow = 'solo';
+  teardownNet();
+  difficultyPickerEl.hidden = false;
+  renderKartSwatches();
+  showScreen(screenKartSelect);
+});
+
+document.getElementById('mp-host-btn').addEventListener('click', () => {
+  pendingFlow = 'host';
+  teardownNet();
+  difficultyPickerEl.hidden = false;
+  renderKartSwatches();
+  showScreen(screenKartSelect);
+});
+
+document.getElementById('mp-join-btn').addEventListener('click', () => {
+  pendingFlow = 'join';
+  teardownNet();
+  showScreen(mpJoinPanel);
+  mpJoinStatusEl.textContent = '';
+  mpCodeInput.value = '';
+});
+
+document.getElementById('kart-select-back-btn').addEventListener('click', () => {
+  teardownNet();
+  showScreen(screenMenu);
+});
+
+document.getElementById('kart-select-continue-btn').addEventListener('click', () => {
+  karts[myKartIndex].setColor(myKartColor);
+
+  if (pendingFlow === 'solo') {
+    teardownNet();
+    beginRaceUi();
+    return;
+  }
+
+  if (pendingFlow === 'host') {
+    netSession = new NetSession();
+    humanSlots = new Set();
+    slotColors = { 0: myKartColor };
+    showScreen(mpHostPanel);
+    mpCodeEl.textContent = '.....';
     renderHostSlots();
-  };
-  netSession.onHostState = (slot, state) => { latestClientStates[slot] = state; };
-  netSession.host();
+
+    netSession.onHostReady = (code) => { mpCodeEl.textContent = code; };
+    netSession.onError = (msg) => { showToast(msg); showScreen(screenMenu); teardownNet(); };
+    netSession.onPlayerJoined = (slot) => { humanSlots.add(slot); renderHostSlots(); };
+    netSession.onPlayerLeft = (slot) => {
+      humanSlots.delete(slot);
+      delete latestClientStates[slot];
+      delete slotColors[slot];
+      applyDifficultyToSlot(slot, currentDifficulty);
+      karts[slot].setColor(KART_COLORS[slot]);
+      renderHostSlots();
+    };
+    netSession.onHostState = (slot, state) => { latestClientStates[slot] = state; };
+    netSession.onPlayerColor = (slot, color) => {
+      slotColors[slot] = color;
+      karts[slot].setColor(color);
+      renderHostSlots();
+    };
+    netSession.host();
+    return;
+  }
+
+  if (pendingFlow === 'join') {
+    netSession.sendColor(myKartColor);
+    showScreen(mpWaitingPanel);
+  }
 });
 
 document.getElementById('mp-host-cancel-btn').addEventListener('click', () => {
   teardownNet();
-  showMpPanel(introMainEl);
+  showScreen(screenMenu);
 });
 
 document.getElementById('mp-host-start-btn').addEventListener('click', () => {
-  netSession.broadcastStart();
+  netSession.broadcastStart(slotColors);
   beginRaceUi();
-});
-
-document.getElementById('mp-join-btn').addEventListener('click', () => {
-  teardownNet();
-  showMpPanel(mpJoinPanel);
-  mpJoinStatusEl.textContent = '';
-  document.getElementById('mp-code-input').value = '';
 });
 
 document.getElementById('mp-join-cancel-btn').addEventListener('click', () => {
   teardownNet();
-  showMpPanel(introMainEl);
+  showScreen(screenMenu);
 });
 document.getElementById('mp-waiting-cancel-btn').addEventListener('click', () => {
   teardownNet();
-  showMpPanel(introMainEl);
+  showScreen(screenMenu);
 });
 
 const mpCodeInput = document.getElementById('mp-code-input');
@@ -209,20 +300,25 @@ document.getElementById('mp-join-connect-btn').addEventListener('click', () => {
   mpJoinStatusEl.textContent = 'Connecting…';
 
   netSession.onError = (msg) => {
-    showMpPanel(mpJoinPanel);
+    showScreen(mpJoinPanel);
     mpJoinStatusEl.textContent = msg;
   };
   netSession.onConnected = (kartIndex) => {
     myKartIndex = kartIndex;
     player = karts[myKartIndex];
     mpMySlotEl.textContent = String(kartIndex + 1);
-    showMpPanel(mpWaitingPanel);
+    difficultyPickerEl.hidden = true; // joiners don't control AI difficulty, only their own kart
+    renderKartSwatches();
+    showScreen(screenKartSelect);
   };
   netSession.onSnapshot = (kartsState, hostHumanSlots) => {
     latestSnapshot = kartsState;
     if (hostHumanSlots) humanSlots = new Set(hostHumanSlots);
   };
-  netSession.onHostStart = () => { beginRaceUi(); };
+  netSession.onHostStart = (colors) => {
+    if (colors) { for (const idx in colors) karts[idx].setColor(colors[idx]); }
+    beginRaceUi();
+  };
   netSession.join(code);
 });
 
@@ -367,7 +463,12 @@ const boostFill = document.getElementById('boost-fill');
 const countdownEl = document.getElementById('countdown');
 const resultsEl = document.getElementById('results');
 const resultsList = document.getElementById('results-list');
+const resultsPlayAgainBtn = document.getElementById('results-play-again-btn');
+const resultsMenuBtn = document.getElementById('results-menu-btn');
 const introEl = document.getElementById('intro');
+
+resultsPlayAgainBtn.addEventListener('click', () => restartRace());
+resultsMenuBtn.addEventListener('click', () => returnToMenu());
 
 function ordinal(n) {
   return ['', '1st', '2nd', '3rd', '4th'][n] || `${n}th`;
@@ -421,17 +522,30 @@ if (isTouchDevice) {
 }
 const touchControlsEl = document.getElementById('touch-controls');
 
+const hudRestartBtn = document.getElementById('hud-restart-btn');
+function refreshHudRestartButton() {
+  if (netSession) {
+    hudRestartBtn.textContent = '✕';
+    hudRestartBtn.title = 'Leave race';
+    hudRestartBtn.setAttribute('aria-label', 'Leave race');
+  } else {
+    hudRestartBtn.textContent = '↻';
+    hudRestartBtn.title = 'Restart race';
+    hudRestartBtn.setAttribute('aria-label', 'Restart race');
+  }
+}
+hudRestartBtn.addEventListener('click', () => {
+  if (netSession) returnToMenu();
+  else restartRace();
+});
+
 function beginRaceUi() {
   introEl.classList.add('hidden');
   hud.classList.add('active');
   touchControlsEl.classList.add('active');
+  refreshHudRestartButton();
   startCountdown();
 }
-
-document.getElementById('start-btn').addEventListener('click', () => {
-  teardownNet();
-  beginRaceUi();
-});
 
 function startCountdown() {
   gameState = 'countdown';
@@ -473,6 +587,8 @@ function finishRace() {
     }
     resultsList.appendChild(li);
   });
+  resultsPlayAgainBtn.classList.toggle('hidden', !!netSession);
+  resultsMenuBtn.classList.toggle('hidden', !netSession);
   resultsEl.classList.remove('hidden');
 }
 
@@ -562,7 +678,8 @@ function animate() {
       player.updatePlayer(dt, input, track);
     }
 
-    let activeKarts; // karts this client actually simulates locally, for boost-pad checks
+    let activeKarts; // karts this client actually simulates locally, for boost-pad/obstacle checks
+    let movable; // kart indices this client is allowed to physically move via collisions
     if (netSession && netSession.isHost) {
       const aiIndices = [];
       for (let i = 0; i < karts.length; i++) {
@@ -576,7 +693,7 @@ function animate() {
         }
       }
       activeKarts = [player, ...aiIndices.map(i => karts[i])];
-      resolveKartCollisions(karts, new Set([myKartIndex, ...aiIndices]));
+      movable = new Set([myKartIndex, ...aiIndices]);
     } else if (netSession && !netSession.isHost) {
       for (let i = 0; i < karts.length; i++) {
         if (i === myKartIndex) continue;
@@ -584,12 +701,14 @@ function animate() {
         if (st) karts[i].applyNetworkState(st, track);
       }
       activeKarts = [player];
-      resolveKartCollisions(karts, new Set([myKartIndex]));
+      movable = new Set([myKartIndex]);
     } else {
       for (let i = 0; i < karts.length; i++) { if (i !== myKartIndex) karts[i].updateAI(dt, track); }
       activeKarts = karts;
-      resolveKartCollisions(karts);
+      movable = null;
     }
+    resolveKartCollisions(karts, movable);
+    resolveObstacleCollisions(karts, track.obstacles, movable);
 
     track.updateBoostPads(dt);
     checkBoostPads(activeKarts);
