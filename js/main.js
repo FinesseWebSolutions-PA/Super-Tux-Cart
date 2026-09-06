@@ -55,6 +55,31 @@ scene.add(sun);
 const track = new Track();
 scene.add(track.group);
 
+// ---------------- Audio ----------------
+// Browsers won't let audio start outside a user gesture, so the context is
+// only created when a button is tapped on the way into a race.
+const gameAudio = new GameAudio();
+let soundEnabled = true;
+
+const soundToggleSetup = document.getElementById('sound-toggle-setup');
+const hudSoundBtn = document.getElementById('hud-sound-btn');
+function refreshSoundButtons() {
+  soundToggleSetup.textContent = `Sound: ${soundEnabled ? 'On' : 'Off'}`;
+  soundToggleSetup.classList.toggle('on', soundEnabled);
+  hudSoundBtn.classList.toggle('muted', !soundEnabled);
+  hudSoundBtn.title = soundEnabled ? 'Mute sound' : 'Unmute sound';
+  hudSoundBtn.setAttribute('aria-label', hudSoundBtn.title);
+}
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  if (soundEnabled) gameAudio.init(); // this toggle is itself a gesture, so it can start the context
+  gameAudio.setEnabled(soundEnabled);
+  refreshSoundButtons();
+}
+soundToggleSetup.addEventListener('click', toggleSound);
+hudSoundBtn.addEventListener('click', toggleSound);
+refreshSoundButtons();
+
 const KART_COLORS = [0xd6322c, 0x2f6fd6, 0x3ca35c, 0x8a3ccf];
 const KART_COLOR_PALETTE = [0xd6322c, 0x2f6fd6, 0x3ca35c, 0x8a3ccf, 0xff8c1a, 0x1ac9c9];
 const N = track.segments;
@@ -227,6 +252,7 @@ document.getElementById('kart-select-back-btn').addEventListener('click', () => 
 });
 
 document.getElementById('kart-select-continue-btn').addEventListener('click', () => {
+  if (soundEnabled) gameAudio.init(); // a real tap — the only place a browser will let audio start
   karts[myKartIndex].setColor(myKartColor);
 
   if (pendingFlow === 'solo') {
@@ -276,6 +302,7 @@ document.getElementById('mp-host-cancel-btn').addEventListener('click', () => {
 });
 
 document.getElementById('mp-host-start-btn').addEventListener('click', () => {
+  if (soundEnabled) gameAudio.init();
   netSession.broadcastStart(slotColors);
   beginRaceUi();
 });
@@ -499,16 +526,64 @@ function updateHud() {
 }
 
 // ---------------- Camera ----------------
+const CAMERA_BASE_FOV = 65;
+const CAMERA_MAX_FOV = 82; // widening with speed is what actually sells the sense of pace
+let cameraShake = 0; // decaying impulse, topped up by impacts
+let camFov = CAMERA_BASE_FOV;
+let camLateral = 0; // trails the turn so you see into the corner
+let camRoll = 0;
+
+function addCameraShake(amount) {
+  cameraShake = Math.min(1.2, cameraShake + amount);
+}
+
 function updateCamera(dt) {
   const forward = new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading));
+  const right = new THREE.Vector3(Math.cos(player.heading), 0, -Math.sin(player.heading));
+  const speedFrac = THREE.MathUtils.clamp(Math.abs(player.speed) / KART_PHYSICS.maxSpeed, 0, 1);
+  const boosting = player.boostTimer > 0;
+
+  // FOV opens up with speed (and a little extra on boost), which reads as
+  // acceleration far more strongly than the speed number changing does.
+  const targetFov = CAMERA_BASE_FOV + speedFrac * (CAMERA_MAX_FOV - CAMERA_BASE_FOV) + (boosting ? 5 : 0);
+  camFov += (targetFov - camFov) * Math.min(1, dt * 3);
+  if (Math.abs(camera.fov - camFov) > 0.01) {
+    camera.fov = camFov;
+    camera.updateProjectionMatrix();
+  }
+
+  // Swing wide of the turn and roll into it, both trailing the kart.
+  const targetLateral = -player.visualYaw * 3.2 - player.visualRoll * 6;
+  camLateral += (targetLateral - camLateral) * Math.min(1, dt * 4);
+  const targetRoll = player.visualRoll * 0.55;
+  camRoll += (targetRoll - camRoll) * Math.min(1, dt * 4);
+
+  const distance = 8.5 + speedFrac * 1.6; // pull back a touch at speed
   const desired = new THREE.Vector3()
     .copy(player.position)
-    .addScaledVector(forward, -8.5)
+    .addScaledVector(forward, -distance)
+    .addScaledVector(right, camLateral)
     .add(new THREE.Vector3(0, 3.6, 0));
+
+  // Off-road adds a constant rumble on top of any impact shake.
+  const rumble = player.offTrack ? speedFrac * 0.35 : 0;
+  const shake = cameraShake + rumble;
+  if (shake > 0.001) {
+    desired.x += (Math.random() - 0.5) * shake * 0.9;
+    desired.y += (Math.random() - 0.5) * shake * 0.7;
+    desired.z += (Math.random() - 0.5) * shake * 0.9;
+  }
+  cameraShake = Math.max(0, cameraShake - dt * 2.6);
+
   const lerp = 1 - Math.pow(0.001, dt);
   camera.position.lerp(desired, lerp);
-  const lookTarget = new THREE.Vector3().copy(player.position).addScaledVector(forward, 4).add(new THREE.Vector3(0, 1.2, 0));
+
+  const lookTarget = new THREE.Vector3()
+    .copy(player.position)
+    .addScaledVector(forward, 4)
+    .add(new THREE.Vector3(0, 1.2, 0));
   camera.lookAt(lookTarget);
+  camera.rotateZ(camRoll); // after lookAt, which overwrites rotation
 }
 
 // ---------------- Race flow ----------------
@@ -650,6 +725,7 @@ const clock = new THREE.Clock();
 let wasBlocked = false;
 let blockStartedAt = 0;
 let netTickAccumulator = 0;
+let prevBoostTimer = 0; // edge-detects a boost starting, for the whoosh
 const NET_TICK_INTERVAL = 1 / 15; // send/broadcast state 15x/sec — plenty for kart positions, keeps bandwidth trivial
 
 function animate() {
@@ -686,7 +762,7 @@ function animate() {
         if (i === myKartIndex) continue;
         if (humanSlots.has(i)) {
           const st = latestClientStates[i];
-          if (st) karts[i].applyNetworkState(st, track);
+          if (st) karts[i].applyNetworkState(st, track, dt);
         } else {
           karts[i].updateAI(dt, track);
           aiIndices.push(i);
@@ -698,7 +774,7 @@ function animate() {
       for (let i = 0; i < karts.length; i++) {
         if (i === myKartIndex) continue;
         const st = latestSnapshot && latestSnapshot[i];
-        if (st) karts[i].applyNetworkState(st, track);
+        if (st) karts[i].applyNetworkState(st, track, dt);
       }
       activeKarts = [player];
       movable = new Set([myKartIndex]);
@@ -712,6 +788,25 @@ function animate() {
 
     track.updateBoostPads(dt);
     checkBoostPads(activeKarts);
+
+    // Anything that hit the player this frame shakes the camera and thumps.
+    if (player.impactMagnitude > 0.01) {
+      addCameraShake(0.35 + player.impactMagnitude * 0.6);
+      gameAudio.impact(0.4 + player.impactMagnitude);
+    }
+    for (const k of karts) k.impactMagnitude = 0;
+
+    // Boost fired this frame (drift turbo or a pad) — rising whoosh.
+    if (player.boostTimer > 0 && prevBoostTimer <= 0) gameAudio.boost();
+    prevBoostTimer = player.boostTimer;
+
+    gameAudio.update({
+      speed: player.speed,
+      maxSpeed: KART_PHYSICS.maxSpeed,
+      throttle: input.up ? 1 : (input.down ? -1 : 0),
+      drifting: player.driftDir !== 0,
+      offTrack: player.offTrack,
+    });
 
     if (netSession) {
       netTickAccumulator += dt;
@@ -731,6 +826,9 @@ function animate() {
     }
   } else if (gameState === 'countdown' && !blocked) {
     track.updateBoostPads(dt);
+    gameAudio.update({ speed: 0, maxSpeed: KART_PHYSICS.maxSpeed, throttle: 0, drifting: false, offTrack: false });
+  } else {
+    gameAudio.idle(); // menus and results: fade the engine out rather than leaving it droning
   }
 
   updateCamera(dt);

@@ -78,11 +78,16 @@ body.touch #hud-bottom-right {
   transform: translateX(50%);
 }
 
-#hud-restart-btn {
+#hud-buttons {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 10px);
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+.hud-icon-btn {
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -98,8 +103,12 @@ body.touch #hud-bottom-right {
   align-items: center;
   justify-content: center;
 }
-#hud-restart-btn:active {
+.hud-icon-btn:active {
   background: rgba(255, 255, 255, 0.35);
+}
+.hud-icon-btn.muted {
+  text-decoration: line-through;
+  opacity: 0.55;
 }
 
 #speed {

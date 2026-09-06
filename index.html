@@ -15,7 +15,10 @@
       <div id="lap">LAP 1 / 3</div>
       <div id="place">1st</div>
     </div>
-    <button id="hud-restart-btn" class="hud-icon-btn" aria-label="Restart race" title="Restart race">R</button>
+    <div id="hud-buttons">
+      <button id="hud-restart-btn" class="hud-icon-btn" aria-label="Restart race" title="Restart race">R</button>
+      <button id="hud-sound-btn" class="hud-icon-btn" aria-label="Mute sound" title="Mute sound">S</button>
+    </div>
     <div id="hud-top-right">
       <div id="timer">00:00.00</div>
     </div>
@@ -94,6 +97,7 @@
         </div>
       </div>
       <button id="tilt-toggle-intro" class="tilt-btn" hidden>Tilt Steering: Off</button>
+      <button id="sound-toggle-setup" class="tilt-btn">Sound: On</button>
       <button id="kart-select-continue-btn" class="tilt-btn mp-primary">Continue</button>
       <button id="kart-select-back-btn" class="tilt-btn">Back</button>
     </div>
@@ -126,6 +130,7 @@
   <script src="js/track.js"></script>
   <script src="js/kart.js"></script>
   <script src="js/net.js"></script>
+  <script src="js/audio.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

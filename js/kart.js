@@ -18,13 +18,18 @@ const BUMP_DECAY = 3.5;
 function buildKartMesh(bodyColor) {
   const group = new THREE.Group();
 
+  // The chassis rides in its own sub-group so it can roll and pitch on the
+  // suspension while the wheels stay planted on the road.
+  const chassis = new THREE.Group();
+  group.add(chassis);
+
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(1.6, 0.55, 3.2),
     new THREE.MeshLambertMaterial({ color: bodyColor })
   );
   body.position.y = 0.5;
   body.castShadow = true;
-  group.add(body);
+  chassis.add(body);
 
   const cabin = new THREE.Mesh(
     new THREE.BoxGeometry(1.1, 0.5, 1.3),
@@ -32,7 +37,7 @@ function buildKartMesh(bodyColor) {
   );
   cabin.position.set(0, 0.95, -0.2);
   cabin.castShadow = true;
-  group.add(cabin);
+  chassis.add(cabin);
 
   const nose = new THREE.Mesh(
     new THREE.ConeGeometry(0.55, 1.0, 4),
@@ -41,7 +46,7 @@ function buildKartMesh(bodyColor) {
   nose.rotation.x = Math.PI / 2;
   nose.rotation.y = Math.PI / 4;
   nose.position.set(0, 0.5, 1.85);
-  group.add(nose);
+  chassis.add(nose);
 
   const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.35, 12);
   const wheelMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
@@ -59,7 +64,7 @@ function buildKartMesh(bodyColor) {
     wheels.push(w);
   }
 
-  return { group, wheels, frontWheels: [wheels[0], wheels[1]], body, nose };
+  return { group, chassis, wheels, frontWheels: [wheels[0], wheels[1]], body, nose };
 }
 
 class Kart {
@@ -67,10 +72,23 @@ class Kart {
     this.isPlayer = isPlayer;
     const model = buildKartMesh(color);
     this.mesh = model.group;
+    this.chassis = model.chassis;
     this.wheels = model.wheels;
     this.frontWheels = model.frontWheels;
     this.bodyMesh = model.body;
     this.noseMesh = model.nose;
+
+    // Cosmetic body dynamics — lean, squat/dive, drift yaw. These never
+    // feed back into the physics, they just make the kart read as a
+    // vehicle with weight instead of a box sliding on rails.
+    this.visualRoll = 0;
+    this.visualPitch = 0;
+    this.visualYaw = 0;
+    this.bodyBob = 0;
+    this.impactMagnitude = 0; // consumed by main.js for camera shake + impact sound
+    this._prevSpeed = 0;
+    this._prevHeading = 0;
+    this._prevY = 0;
 
     const heading = Math.atan2(startTangent.x, startTangent.z);
     const side = new THREE.Vector3(Math.cos(heading), 0, -Math.sin(heading));
@@ -100,7 +118,35 @@ class Kart {
 
   _syncMesh() {
     this.mesh.position.set(this.position.x, this.position.y, this.position.z);
-    this.mesh.rotation.y = this.heading;
+    // Drift yaw turns the whole kart (wheels included) into the slide;
+    // roll/pitch/bob move only the chassis on its suspension.
+    this.mesh.rotation.y = this.heading + this.visualYaw;
+    this.chassis.rotation.z = this.visualRoll;
+    this.chassis.rotation.x = this.visualPitch;
+    this.chassis.position.y = this.bodyBob;
+  }
+
+  // Smoothly chase the cosmetic body targets. Separated out so both
+  // locally-simulated and network-driven karts lean the same way.
+  _updateBodyDynamics(dt, steerInput, accel, drifting) {
+    const P = KART_PHYSICS;
+    const speedFrac = THREE.MathUtils.clamp(Math.abs(this.speed) / P.maxSpeed, 0, 1);
+
+    const targetRoll = -steerInput * speedFrac * (drifting ? 0.20 : 0.13);
+    const targetPitch = THREE.MathUtils.clamp(-accel * 0.006, -0.07, 0.07);
+    const targetYaw = drifting ? this.driftDir * 0.28 * speedFrac : 0;
+
+    // Body drops into dips and lifts over crests, from vertical velocity.
+    const verticalRate = dt > 0 ? (this.position.y - this._prevY) / dt : 0;
+    const targetBob = THREE.MathUtils.clamp(-verticalRate * 0.012, -0.10, 0.10);
+    this._prevY = this.position.y;
+
+    const k = Math.min(1, dt * 9);
+    const kYaw = Math.min(1, dt * 6); // drift yaw eases in/out a touch slower
+    this.visualRoll += (targetRoll - this.visualRoll) * k;
+    this.visualPitch += (targetPitch - this.visualPitch) * k;
+    this.visualYaw += (targetYaw - this.visualYaw) * kYaw;
+    this.bodyBob += (targetBob - this.bodyBob) * k;
   }
 
   get offTrack() { return this._offTrack; }
@@ -179,6 +225,10 @@ class Kart {
     const steerVisual = THREE.MathUtils.clamp(steerInput * 0.5, -0.5, 0.5);
     for (const w of this.frontWheels) w.rotation.y = steerVisual;
 
+    const accel = dt > 0 ? (this.speed - this._prevSpeed) / dt : 0;
+    this._prevSpeed = this.speed;
+    this._updateBodyDynamics(dt, steerInput, accel, this.driftDir !== 0);
+
     this._syncMesh();
   }
 
@@ -239,7 +289,27 @@ class Kart {
   // taken as given; lastIndex/offTrack are re-derived locally purely for
   // this client's own HUD ranking and collision checks, without touching
   // the authoritative lap count.
-  applyNetworkState(state, track) {
+  applyNetworkState(state, track, dt = 1 / 60) {
+    // This runs every frame against the latest snapshot, which only
+    // actually changes at the network tick rate. Body-lean inputs are
+    // therefore derived once per *new* snapshot and then held, while the
+    // smoothing below still runs every frame so remote karts lean
+    // smoothly instead of stepping at 15Hz.
+    const isNewState = state !== this._lastAppliedState;
+    if (isNewState) {
+      const prevHeading = this.heading;
+      const prevSpeed = this.speed;
+      const netDt = this._lastNetTime ? Math.min(0.25, (performance.now() - this._lastNetTime) / 1000) : 1 / 15;
+      this._lastNetTime = performance.now();
+
+      let headingDelta = state.h - prevHeading;
+      while (headingDelta > Math.PI) headingDelta -= Math.PI * 2;
+      while (headingDelta < -Math.PI) headingDelta += Math.PI * 2;
+      this._netSteerProxy = THREE.MathUtils.clamp((headingDelta / netDt) / KART_PHYSICS.turnRate, -1, 1);
+      this._netAccel = (state.s - prevSpeed) / netDt;
+      this._lastAppliedState = state;
+    }
+
     this.position.x = state.x;
     this.position.z = state.z;
     this.heading = state.h;
@@ -253,7 +323,8 @@ class Kart {
     this._offTrack = Math.abs(track.lateralOffset(this.position, index)) > track.width / 2 + 0.2;
     this.position.y = track.points[index].y;
 
-    for (const w of this.wheels) w.rotation.x -= this.speed * (1 / 60) * 2.2;
+    for (const w of this.wheels) w.rotation.x -= this.speed * dt * 2.2;
+    this._updateBodyDynamics(dt, this._netSteerProxy || 0, this._netAccel || 0, this.driftDir !== 0);
     this._syncMesh();
   }
 }
@@ -304,12 +375,14 @@ function resolveKartCollisions(karts, movable = null) {
         a.bumpVelocity.x -= nx * impulse;
         a.bumpVelocity.z -= nz * impulse;
         a.speed *= 0.8;
+        a.impactMagnitude = Math.max(a.impactMagnitude, impulse / BUMP_RESTITUTION);
         a._syncMesh();
       }
       if (bMoves) {
         b.bumpVelocity.x += nx * impulse;
         b.bumpVelocity.z += nz * impulse;
         b.speed *= 0.8;
+        b.impactMagnitude = Math.max(b.impactMagnitude, impulse / BUMP_RESTITUTION);
         b._syncMesh();
       }
     }
@@ -341,6 +414,7 @@ function resolveObstacleCollisions(karts, obstacles, movable = null) {
       k.bumpVelocity.x += nx * impulse;
       k.bumpVelocity.z += nz * impulse;
       k.speed *= 0.6;
+      k.impactMagnitude = Math.max(k.impactMagnitude, impulse / BUMP_RESTITUTION);
       k._syncMesh();
     }
   }
