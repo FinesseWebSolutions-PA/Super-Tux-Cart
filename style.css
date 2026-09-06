@@ -151,6 +151,11 @@ body.touch #hud-bottom-right {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  justify-content: safe center; /* ignored where unsupported, falls back to the line above */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: 16px 12px;
   background: rgba(10, 15, 30, 0.82);
 }
 #results.hidden { display: none; }
@@ -180,7 +185,15 @@ body.touch #hud-bottom-right {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* NOT justify-content:center — with a taller-than-viewport menu that
+     clips content off both ends with no way to reach it. flex-start plus
+     auto margins on the visible panel centers it when there's room and
+     scrolls normally when there isn't. */
+  justify-content: flex-start;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y; /* body sets touch-action:none for the canvas; menus still need to scroll */
+  padding: 16px 12px;
   background: radial-gradient(circle at 50% 30%, #2a6fb0 0%, #0c2540 80%);
   text-align: center;
   z-index: 10;
@@ -275,6 +288,8 @@ body.touch #hud-bottom-right {
 }
 #intro .mp-panel:not(.hidden) {
   display: flex;
+  margin: auto 0; /* vertically centers while there's spare room, collapses to 0 when scrolling is needed */
+  flex-shrink: 0;
 }
 
 .tilt-btn.mp-primary {
@@ -527,4 +542,47 @@ body.tilt-on .steer-row {
 }
 #toast.visible {
   opacity: 1;
+}
+
+/* ---------------- Short screens (phone in landscape) ----------------
+   A landscape phone gives roughly 330-420px of height. At full size the
+   menu and kart-select screens overflow that, so everything below the
+   fold (Continue, Back) became unreachable. These shrink the pre-race
+   screens enough to fit; the scrolling above is the backstop. */
+
+@media (max-height: 540px) {
+  #intro { padding: 10px; }
+  #intro h1 { font-size: 34px; letter-spacing: 2px; }
+  #intro h2 { font-size: 19px; margin-bottom: 0; }
+  #intro p { font-size: 12px; margin-top: 2px; }
+
+  #intro .controls {
+    margin-top: 10px;
+    gap: 3px 18px;
+    font-size: 11.5px;
+  }
+
+  .mp-panel { gap: 7px; }
+
+  #kart-swatches { gap: 8px; margin: 0; max-width: 300px; }
+  .kart-swatch { width: 48px; height: 33px; border-width: 2px; }
+  .kart-swatch::after { width: 20px; height: 10px; top: 4px; }
+
+  #difficulty-picker { margin-top: 8px; gap: 4px; }
+  .difficulty-label { font-size: 10px; }
+  .difficulty-btn { padding: 5px 14px; font-size: 12px; }
+
+  .tilt-btn { padding: 7px 16px; font-size: 12.5px; }
+  #tilt-toggle-intro { margin-top: 6px; }
+  #menu-buttons { margin-top: 12px; gap: 7px; }
+  .mp-divider { font-size: 10px; }
+
+  #mp-code { font-size: 28px; letter-spacing: 5px; padding: 6px 16px; }
+  #mp-slots { font-size: 13px; line-height: 1.55; }
+  #mp-code-input { font-size: 22px; width: 140px; padding: 6px; letter-spacing: 4px; }
+
+  #results { padding: 10px; }
+  #results h1 { font-size: 28px; margin-bottom: 2px; }
+  #results-list { font-size: 16px; line-height: 1.5; min-width: 0; }
+  #results-play-again-btn, #results-menu-btn { margin-top: 12px; }
 }
