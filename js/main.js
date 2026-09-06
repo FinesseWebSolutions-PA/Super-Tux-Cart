@@ -378,7 +378,7 @@ function animate() {
 
   if (gameState === 'racing' && !blocked) {
     input.steer = (tiltEnabled && tiltNeutral !== null)
-      ? THREE.MathUtils.clamp((tiltRaw - tiltNeutral) / TILT_MAX_ANGLE, -1, 1)
+      ? THREE.MathUtils.clamp((tiltNeutral - tiltRaw) / TILT_MAX_ANGLE, -1, 1)
       : null;
     player.updatePlayer(dt, input, track);
     for (let i = 1; i < karts.length; i++) karts[i].updateAI(dt, track);
