@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Kart Rush</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='28'%3E%F0%9F%8F%8E%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
@@ -26,6 +26,23 @@
 
   <div id="countdown"></div>
 
+  <div id="touch-controls">
+    <div id="touch-steer">
+      <button id="btn-left" class="touch-btn steer" aria-label="Steer left">&#9664;</button>
+      <button id="btn-right" class="touch-btn steer" aria-label="Steer right">&#9654;</button>
+    </div>
+    <div id="touch-actions">
+      <button id="btn-drift" class="touch-btn action" aria-label="Drift">DRIFT</button>
+      <button id="btn-brake" class="touch-btn action" aria-label="Brake">BRAKE</button>
+      <button id="btn-gas" class="touch-btn action gas" aria-label="Accelerate">GAS</button>
+    </div>
+  </div>
+
+  <div id="rotate-overlay">
+    <div class="rotate-icon">&#128241;</div>
+    <p>Rotate your device to landscape to race</p>
+  </div>
+
   <div id="results" class="hidden">
     <h1>Race Finished!</h1>
     <ol id="results-list"></ol>
@@ -35,11 +52,16 @@
   <div id="intro">
     <h1>KART RUSH</h1>
     <p>A Super&nbsp;Tux&nbsp;Kart&#8209;style arcade racer</p>
-    <div class="controls">
+    <div class="controls" id="controls-keyboard">
       <div><b>&uarr; / W</b> Accelerate</div>
       <div><b>&darr; / S</b> Brake / Reverse</div>
       <div><b>&larr; &rarr; / A D</b> Steer</div>
       <div><b>Shift</b> Drift (hold + turn for a mini&#8209;turbo)</div>
+    </div>
+    <div class="controls" id="controls-touch" hidden>
+      <div><b>GAS / BRAKE</b> bottom&#8209;right</div>
+      <div><b>&#9664; &#9654;</b> Steer, bottom&#8209;left</div>
+      <div><b>DRIFT</b> hold + steer for a mini&#8209;turbo</div>
     </div>
     <button id="start-btn">Start Race</button>
   </div>

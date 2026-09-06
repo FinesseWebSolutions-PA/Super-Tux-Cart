@@ -3,9 +3,22 @@
 const TOTAL_LAPS = 3;
 const AI_COUNT = 3;
 
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const isMobile = isTouchDevice && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
+if (isTouchDevice) document.body.classList.add('touch');
+
+// iOS/Android browser chrome resizes the viewport without firing 'resize'
+// reliably against 100vh, so drive height off a JS-measured custom property.
+function setViewportHeight() {
+  document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
+}
+setViewportHeight();
+window.addEventListener('resize', setViewportHeight);
+window.addEventListener('orientationchange', setViewportHeight);
+
 const canvas = document.getElementById('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 
@@ -26,7 +39,8 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff3d6, 1.0);
 sun.position.set(80, 120, 40);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+const shadowRes = isMobile ? 1024 : 2048;
+sun.shadow.mapSize.set(shadowRes, shadowRes);
 sun.shadow.camera.left = -140;
 sun.shadow.camera.right = 140;
 sun.shadow.camera.top = 140;
@@ -74,6 +88,39 @@ function setKey(code, val) {
     case 'KeyR': if (val && gameState === 'finished') restartRace(); break;
   }
 }
+
+// Touch buttons drive the same `input` flags as the keyboard handler above.
+function bindTouchButton(id, flag) {
+  const el = document.getElementById(id);
+  const set = (val) => (e) => {
+    e.preventDefault();
+    input[flag] = val;
+    el.classList.toggle('pressed', val);
+  };
+  el.addEventListener('pointerdown', set(true));
+  el.addEventListener('pointerup', set(false));
+  el.addEventListener('pointercancel', set(false));
+  el.addEventListener('pointerleave', set(false));
+}
+if (isTouchDevice) {
+  bindTouchButton('btn-left', 'left');
+  bindTouchButton('btn-right', 'right');
+  bindTouchButton('btn-gas', 'up');
+  bindTouchButton('btn-brake', 'down');
+  bindTouchButton('btn-drift', 'drift');
+}
+
+// ---------------- Orientation lock ----------------
+const rotateOverlay = document.getElementById('rotate-overlay');
+function isPortraitBlocked() {
+  return isTouchDevice && window.innerHeight > window.innerWidth;
+}
+function updateOrientationGate() {
+  rotateOverlay.classList.toggle('active', isPortraitBlocked());
+}
+window.addEventListener('resize', updateOrientationGate);
+window.addEventListener('orientationchange', updateOrientationGate);
+updateOrientationGate();
 
 // ---------------- HUD ----------------
 const hud = document.getElementById('hud');
@@ -133,9 +180,16 @@ let gameState = 'intro'; // intro | countdown | racing | finished
 let raceStartTime = null;
 let standingsSnapshot = null;
 
+if (isTouchDevice) {
+  document.getElementById('controls-keyboard').hidden = true;
+  document.getElementById('controls-touch').hidden = false;
+}
+const touchControlsEl = document.getElementById('touch-controls');
+
 document.getElementById('start-btn').addEventListener('click', () => {
   introEl.classList.add('hidden');
   hud.classList.add('active');
+  touchControlsEl.classList.add('active');
   startCountdown();
 });
 
@@ -227,12 +281,19 @@ function checkBoostPads() {
 
 // ---------------- Main loop ----------------
 const clock = new THREE.Clock();
+let wasBlocked = false;
+let blockStartedAt = 0;
 
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
 
-  if (gameState === 'racing') {
+  const blocked = isPortraitBlocked();
+  if (blocked && !wasBlocked) blockStartedAt = performance.now();
+  if (!blocked && wasBlocked && raceStartTime !== null) raceStartTime += performance.now() - blockStartedAt;
+  wasBlocked = blocked;
+
+  if (gameState === 'racing' && !blocked) {
     player.updatePlayer(dt, input, track);
     for (let i = 1; i < karts.length; i++) karts[i].updateAI(dt, track);
     track.updateBoostPads(dt);
@@ -243,7 +304,7 @@ function animate() {
       finishRace();
     }
     updateHud();
-  } else if (gameState === 'countdown') {
+  } else if (gameState === 'countdown' && !blocked) {
     track.updateBoostPads(dt);
   }
 
