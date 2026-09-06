@@ -75,7 +75,7 @@ for (let i = 0; i < 1 + AI_COUNT; i++) {
 const player = karts[0];
 
 // ---------------- Input ----------------
-const input = { up: false, down: false, left: false, right: false, drift: false };
+const input = { up: false, down: false, left: false, right: false, drift: false, steer: null };
 window.addEventListener('keydown', e => setKey(e.code, true));
 window.addEventListener('keyup', e => setKey(e.code, false));
 function setKey(code, val) {
@@ -121,6 +121,88 @@ function updateOrientationGate() {
 window.addEventListener('resize', updateOrientationGate);
 window.addEventListener('orientationchange', updateOrientationGate);
 updateOrientationGate();
+
+// ---------------- Tilt steering (opt-in, falls back to buttons) ----------------
+const TILT_SUPPORTED = typeof window.DeviceOrientationEvent !== 'undefined';
+const TILT_MAX_ANGLE = 22; // degrees of tilt for full steering lock
+let tiltEnabled = false;
+let tiltNeutral = null;
+let tiltRaw = 0;
+let tiltEventSeen = false;
+let tiltWatchdog = null;
+
+function tiltAngleFromEvent(e) {
+  const angle = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+  if (angle === 90) return e.beta || 0;
+  if (angle === -90 || angle === 270) return -(e.beta || 0);
+  return e.gamma || 0; // portrait fallback; gameplay itself is landscape-only
+}
+
+if (TILT_SUPPORTED) {
+  window.addEventListener('deviceorientation', (e) => {
+    tiltEventSeen = true;
+    tiltRaw = tiltAngleFromEvent(e);
+    if (tiltNeutral === null) tiltNeutral = tiltRaw;
+  });
+}
+
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function showToast(msg, ms = 2400) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('visible'), ms);
+}
+
+const tiltButtons = [document.getElementById('tilt-toggle-intro'), document.getElementById('tilt-toggle-race')];
+function refreshTiltButtons() {
+  for (const btn of tiltButtons) {
+    if (!btn) continue;
+    btn.classList.toggle('on', tiltEnabled);
+    if (btn.id === 'tilt-toggle-intro') btn.textContent = `Tilt Steering: ${tiltEnabled ? 'On' : 'Off'}`;
+    else btn.textContent = tiltEnabled ? 'TILT ON' : 'TILT OFF';
+  }
+  document.body.classList.toggle('tilt-on', tiltEnabled);
+}
+
+function activateTilt() {
+  tiltEnabled = true;
+  tiltNeutral = null; // calibrate off whatever angle the player is holding right now
+  tiltEventSeen = false;
+  refreshTiltButtons();
+  clearTimeout(tiltWatchdog);
+  tiltWatchdog = setTimeout(() => {
+    if (!tiltEventSeen) {
+      tiltEnabled = false;
+      refreshTiltButtons();
+      showToast('Tilt steering unavailable here — using buttons');
+    }
+  }, 1200);
+}
+
+function deactivateTilt() {
+  tiltEnabled = false;
+  input.steer = null;
+  refreshTiltButtons();
+}
+
+function toggleTilt() {
+  if (tiltEnabled) { deactivateTilt(); return; }
+  if (!TILT_SUPPORTED) { showToast('Tilt steering not supported on this device'); return; }
+  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then(state => { if (state === 'granted') activateTilt(); else showToast('Tilt permission denied — using buttons'); })
+      .catch(() => showToast('Tilt steering unavailable — using buttons'));
+  } else {
+    activateTilt();
+  }
+}
+
+if (isTouchDevice && TILT_SUPPORTED) {
+  for (const btn of tiltButtons) { if (btn) btn.hidden = false; }
+  for (const btn of tiltButtons) { if (btn) btn.addEventListener('click', toggleTilt); }
+}
 
 // ---------------- HUD ----------------
 const hud = document.getElementById('hud');
@@ -195,6 +277,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
 function startCountdown() {
   gameState = 'countdown';
+  if (tiltEnabled) tiltNeutral = null; // recalibrate to however the player is holding the phone now
   countdownEl.classList.add('active');
   const steps = ['3', '2', '1', 'GO!'];
   let i = 0;
@@ -294,6 +377,9 @@ function animate() {
   wasBlocked = blocked;
 
   if (gameState === 'racing' && !blocked) {
+    input.steer = (tiltEnabled && tiltNeutral !== null)
+      ? THREE.MathUtils.clamp((tiltRaw - tiltNeutral) / TILT_MAX_ANGLE, -1, 1)
+      : null;
     player.updatePlayer(dt, input, track);
     for (let i = 1; i < karts.length; i++) karts[i].updateAI(dt, track);
     track.updateBoostPads(dt);

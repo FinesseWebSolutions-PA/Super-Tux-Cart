@@ -28,8 +28,11 @@
 
   <div id="touch-controls">
     <div id="touch-steer">
-      <button id="btn-left" class="touch-btn steer" aria-label="Steer left">&#9664;</button>
-      <button id="btn-right" class="touch-btn steer" aria-label="Steer right">&#9654;</button>
+      <button id="tilt-toggle-race" class="tilt-btn small" hidden>TILT</button>
+      <div class="steer-row">
+        <button id="btn-left" class="touch-btn steer" aria-label="Steer left">&#9664;</button>
+        <button id="btn-right" class="touch-btn steer" aria-label="Steer right">&#9654;</button>
+      </div>
     </div>
     <div id="touch-actions">
       <button id="btn-drift" class="touch-btn action" aria-label="Drift">DRIFT</button>
@@ -42,6 +45,8 @@
     <div class="rotate-icon">&#128241;</div>
     <p>Rotate your device to landscape to race</p>
   </div>
+
+  <div id="toast"></div>
 
   <div id="results" class="hidden">
     <h1>Race Finished!</h1>
@@ -62,7 +67,9 @@
       <div><b>GAS / BRAKE</b> bottom&#8209;right</div>
       <div><b>&#9664; &#9654;</b> Steer, bottom&#8209;left</div>
       <div><b>DRIFT</b> hold + steer for a mini&#8209;turbo</div>
+      <div><b>Tilt</b> optional &mdash; toggle below</div>
     </div>
+    <button id="tilt-toggle-intro" class="tilt-btn" hidden>Tilt Steering: Off</button>
     <button id="start-btn">Start Race</button>
   </div>
 

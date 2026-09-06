@@ -233,6 +233,12 @@ body.touch #touch-controls.active { display: block; }
   left: calc(env(safe-area-inset-left, 0px) + 16px);
   bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.steer-row {
+  display: flex;
   gap: 14px;
 }
 #touch-steer .touch-btn {
@@ -292,4 +298,61 @@ body.touch #touch-controls.active { display: block; }
 @keyframes rotate-hint {
   0%, 100% { transform: rotate(0deg); }
   50% { transform: rotate(90deg); }
+}
+
+/* ---------------- Tilt steering toggle ---------------- */
+
+.tilt-btn {
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  border: 2px solid rgba(255,255,255,0.55);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  border-radius: 20px;
+  padding: 10px 20px;
+  background: rgba(20, 20, 30, 0.5);
+  user-select: none;
+  cursor: pointer;
+}
+.tilt-btn.on {
+  background: rgba(255, 210, 63, 0.9);
+  color: #1a1a1a;
+  border-color: #ffd23f;
+}
+#tilt-toggle-intro {
+  margin-top: 16px;
+}
+#tilt-toggle-race {
+  align-self: center;
+  font-size: 11px;
+  padding: 6px 14px;
+  background: rgba(20, 20, 30, 0.4);
+}
+body.tilt-on .steer-row {
+  display: none;
+}
+
+#toast {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 70px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  max-width: 80vw;
+  text-align: center;
+}
+#toast.visible {
+  opacity: 1;
 }

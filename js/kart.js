@@ -165,7 +165,9 @@ class Kart {
 
   updatePlayer(dt, input, track) {
     const throttle = input.up ? 1 : (input.down ? -1 : 0);
-    const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    const steer = (input.steer !== undefined && input.steer !== null)
+      ? input.steer
+      : (input.left ? 1 : 0) - (input.right ? 1 : 0);
     this._integrate(dt, throttle, steer, input.drift, track);
   }
 
