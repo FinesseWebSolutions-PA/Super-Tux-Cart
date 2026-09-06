@@ -55,35 +55,69 @@
   </div>
 
   <div id="intro">
-    <h1>KART RUSH</h1>
-    <p>A Super&nbsp;Tux&nbsp;Kart&#8209;style arcade racer</p>
-    <div class="controls" id="controls-keyboard">
-      <div><b>&uarr; / W</b> Accelerate</div>
-      <div><b>&darr; / S</b> Brake / Reverse</div>
-      <div><b>&larr; &rarr; / A D</b> Steer</div>
-      <div><b>Shift</b> Drift (hold + turn for a mini&#8209;turbo)</div>
-    </div>
-    <div class="controls" id="controls-touch" hidden>
-      <div><b>GAS / BRAKE</b> bottom&#8209;right</div>
-      <div><b>&#9664; &#9654;</b> Steer, bottom&#8209;left</div>
-      <div><b>DRIFT</b> hold + steer for a mini&#8209;turbo</div>
-      <div><b>Tilt</b> optional &mdash; toggle below</div>
-    </div>
-    <div id="difficulty-picker">
-      <span class="difficulty-label">CPU Difficulty</span>
-      <div class="difficulty-options">
-        <button class="difficulty-btn" data-difficulty="easy">Easy</button>
-        <button class="difficulty-btn selected" data-difficulty="normal">Normal</button>
-        <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+    <div id="intro-main">
+      <h1>KART RUSH</h1>
+      <p>A Super&nbsp;Tux&nbsp;Kart&#8209;style arcade racer</p>
+      <div class="controls" id="controls-keyboard">
+        <div><b>&uarr; / W</b> Accelerate</div>
+        <div><b>&darr; / S</b> Brake / Reverse</div>
+        <div><b>&larr; &rarr; / A D</b> Steer</div>
+        <div><b>Shift</b> Drift (hold + turn for a mini&#8209;turbo)</div>
+      </div>
+      <div class="controls" id="controls-touch" hidden>
+        <div><b>GAS / BRAKE</b> bottom&#8209;right</div>
+        <div><b>&#9664; &#9654;</b> Steer, bottom&#8209;left</div>
+        <div><b>DRIFT</b> hold + steer for a mini&#8209;turbo</div>
+        <div><b>Tilt</b> optional &mdash; toggle below</div>
+      </div>
+      <div id="difficulty-picker">
+        <span class="difficulty-label">CPU Difficulty</span>
+        <div class="difficulty-options">
+          <button class="difficulty-btn" data-difficulty="easy">Easy</button>
+          <button class="difficulty-btn selected" data-difficulty="normal">Normal</button>
+          <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+        </div>
+      </div>
+      <button id="tilt-toggle-intro" class="tilt-btn" hidden>Tilt Steering: Off</button>
+      <button id="start-btn">Start Race</button>
+
+      <div id="mp-menu">
+        <div class="mp-divider">or race friends</div>
+        <div class="mp-menu-buttons">
+          <button id="mp-host-btn" class="tilt-btn">Host Race</button>
+          <button id="mp-join-btn" class="tilt-btn">Join Race</button>
+        </div>
       </div>
     </div>
-    <button id="tilt-toggle-intro" class="tilt-btn" hidden>Tilt Steering: Off</button>
-    <button id="start-btn">Start Race</button>
+
+    <div id="mp-host-panel" class="mp-panel hidden">
+      <p>Share this code:</p>
+      <div id="mp-code">-----</div>
+      <ul id="mp-slots"></ul>
+      <button id="mp-host-start-btn" class="tilt-btn mp-primary">Start Race</button>
+      <button id="mp-host-cancel-btn" class="tilt-btn">Cancel</button>
+    </div>
+
+    <div id="mp-join-panel" class="mp-panel hidden">
+      <p>Enter the host's code:</p>
+      <input id="mp-code-input" maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" />
+      <button id="mp-join-connect-btn" class="tilt-btn mp-primary">Connect</button>
+      <p id="mp-join-status"></p>
+      <button id="mp-join-cancel-btn" class="tilt-btn">Cancel</button>
+    </div>
+
+    <div id="mp-waiting-panel" class="mp-panel hidden">
+      <p>Connected as Player <span id="mp-my-slot"></span></p>
+      <p>Waiting for the host to start&hellip;</p>
+      <button id="mp-waiting-cancel-btn" class="tilt-btn">Leave</button>
+    </div>
   </div>
 
   <script src="js/vendor/three.min.js"></script>
+  <script src="js/vendor/peerjs.min.js"></script>
   <script src="js/track.js"></script>
   <script src="js/kart.js"></script>
+  <script src="js/net.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

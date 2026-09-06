@@ -209,15 +209,61 @@ class Kart {
     this.aiSkill = skillMin + Math.random() * (skillMax - skillMin);
     this.aiLookahead = lookaheadMin + Math.floor(Math.random() * (lookaheadMax - lookaheadMin + 1));
   }
+
+  // Multiplayer: this kart's state as sent over the network. Only the
+  // sender ever runs real physics on it — laps travels as an authoritative
+  // value rather than being re-derived from position on the receiving end.
+  getNetworkState() {
+    return {
+      x: this.position.x, z: this.position.z, h: this.heading, s: this.speed,
+      laps: this.laps, boostTimer: this.boostTimer, driftDir: this.driftDir,
+    };
+  }
+
+  // Multiplayer: apply a state received for a kart driven elsewhere (a
+  // remote human, or AI simulated by the host). Position/heading/laps are
+  // taken as given; lastIndex/offTrack are re-derived locally purely for
+  // this client's own HUD ranking and collision checks, without touching
+  // the authoritative lap count.
+  applyNetworkState(state, track) {
+    this.position.x = state.x;
+    this.position.z = state.z;
+    this.heading = state.h;
+    this.speed = state.s;
+    this.laps = state.laps;
+    this.boostTimer = state.boostTimer;
+    this.driftDir = state.driftDir;
+
+    const { index } = track.nearestIndex(this.position, this.lastIndex);
+    this.lastIndex = index;
+    this._offTrack = Math.abs(track.lateralOffset(this.position, index)) > track.width / 2 + 0.2;
+
+    for (const w of this.wheels) w.rotation.x -= this.speed * (1 / 60) * 2.2;
+    this._syncMesh();
+  }
 }
 
-// Circle-circle collision between every kart pair: separates overlapping
-// karts and kicks both away from the impact along the contact normal, so
-// bumping another kart actually bounces you off it instead of sliding through.
-function resolveKartCollisions(karts) {
+// Circle-circle collision between kart pairs: separates overlapping karts
+// and kicks both away from the impact along the contact normal, so bumping
+// another kart actually bounces you off it instead of sliding through.
+//
+// `movable`, when given (a Set of kart indices), restricts which karts are
+// ever allowed to move — a pair where neither side is movable is skipped
+// entirely, and within a pair only the movable side gets pushed. In
+// multiplayer this lets a client feel an instant local bounce off
+// remote-driven karts without fighting the next incoming network snapshot
+// (which would otherwise just overwrite any push applied to a kart that
+// isn't locally authoritative), and lets a host apply full physics between
+// its own kart and the AI it simulates while still treating connected
+// humans' karts as fixed for the same reason.
+function resolveKartCollisions(karts, movable = null) {
   const minDist = KART_RADIUS * 2;
   for (let i = 0; i < karts.length; i++) {
     for (let j = i + 1; j < karts.length; j++) {
+      const aMoves = movable === null || movable.has(i);
+      const bMoves = movable === null || movable.has(j);
+      if (!aMoves && !bMoves) continue;
+
       const a = karts[i];
       const b = karts[j];
       const dx = b.position.x - a.position.x;
@@ -229,23 +275,28 @@ function resolveKartCollisions(karts) {
       const nz = dz / dist;
       const overlap = minDist - dist;
 
-      a.position.x -= nx * overlap * 0.5;
-      a.position.z -= nz * overlap * 0.5;
-      b.position.x += nx * overlap * 0.5;
-      b.position.z += nz * overlap * 0.5;
+      const aShare = aMoves && bMoves ? 0.5 : (aMoves ? 1 : 0);
+      const bShare = aMoves && bMoves ? 0.5 : (bMoves ? 1 : 0);
+
+      a.position.x -= nx * overlap * aShare;
+      a.position.z -= nz * overlap * aShare;
+      b.position.x += nx * overlap * bShare;
+      b.position.z += nz * overlap * bShare;
 
       const closingSpeed = Math.max(Math.abs(a.speed), Math.abs(b.speed), 4);
       const impulse = Math.min(BUMP_RESTITUTION, closingSpeed * 0.5);
-      a.bumpVelocity.x -= nx * impulse;
-      a.bumpVelocity.z -= nz * impulse;
-      b.bumpVelocity.x += nx * impulse;
-      b.bumpVelocity.z += nz * impulse;
-
-      a.speed *= 0.8;
-      b.speed *= 0.8;
-
-      a._syncMesh();
-      b._syncMesh();
+      if (aMoves) {
+        a.bumpVelocity.x -= nx * impulse;
+        a.bumpVelocity.z -= nz * impulse;
+        a.speed *= 0.8;
+        a._syncMesh();
+      }
+      if (bMoves) {
+        b.bumpVelocity.x += nx * impulse;
+        b.bumpVelocity.z += nz * impulse;
+        b.speed *= 0.8;
+        b._syncMesh();
+      }
     }
   }
 }

@@ -77,7 +77,7 @@ for (let i = 0; i < 1 + AI_COUNT; i++) {
   scene.add(kart.mesh);
   karts.push(kart);
 }
-const player = karts[0];
+let player = karts[0];
 
 // ---------------- CPU difficulty ----------------
 const DIFFICULTY_PRESETS = {
@@ -86,12 +86,13 @@ const DIFFICULTY_PRESETS = {
   hard: { skillMin: 1.08, skillMax: 1.24, lookMin: 7, lookMax: 10 },
 };
 let currentDifficulty = 'normal';
-function applyDifficulty(level) {
+function applyDifficultyToSlot(idx, level) {
   const preset = DIFFICULTY_PRESETS[level] || DIFFICULTY_PRESETS.normal;
+  karts[idx].setDifficulty(preset.skillMin, preset.skillMax, preset.lookMin, preset.lookMax);
+}
+function applyDifficulty(level) {
   currentDifficulty = level;
-  for (let i = 1; i < karts.length; i++) {
-    karts[i].setDifficulty(preset.skillMin, preset.skillMax, preset.lookMin, preset.lookMax);
-  }
+  for (let i = 1; i < karts.length; i++) applyDifficultyToSlot(i, level);
 }
 applyDifficulty(currentDifficulty);
 
@@ -102,6 +103,128 @@ for (const btn of document.querySelectorAll('.difficulty-btn')) {
     applyDifficulty(btn.dataset.difficulty);
   });
 }
+
+// ---------------- Multiplayer lobby ----------------
+// Host-relay model: everyone connects only to the host, never to each
+// other. `humanSlots` names which kart indices are driven by a real
+// person (the host's own slot 0 is implied, not included) — the host
+// builds it directly from join/leave events; clients just mirror whatever
+// the host reports in each snapshot, since only the host actually knows.
+let netSession = null;
+let myKartIndex = 0;
+let humanSlots = new Set();
+let latestClientStates = {}; // host only: slot -> last received state
+let latestSnapshot = null; // client only: last received {karts, humanSlots}
+
+const introMainEl = document.getElementById('intro-main');
+const mpHostPanel = document.getElementById('mp-host-panel');
+const mpJoinPanel = document.getElementById('mp-join-panel');
+const mpWaitingPanel = document.getElementById('mp-waiting-panel');
+const mpCodeEl = document.getElementById('mp-code');
+const mpSlotsEl = document.getElementById('mp-slots');
+const mpJoinStatusEl = document.getElementById('mp-join-status');
+const mpMySlotEl = document.getElementById('mp-my-slot');
+
+function showMpPanel(panel) {
+  for (const p of [introMainEl, mpHostPanel, mpJoinPanel, mpWaitingPanel]) p.classList.add('hidden');
+  panel.classList.remove('hidden');
+}
+
+function renderHostSlots() {
+  mpSlotsEl.innerHTML = '';
+  for (let i = 0; i < karts.length; i++) {
+    const li = document.createElement('li');
+    if (i === 0) { li.textContent = 'Player 1 — You (Host)'; li.className = 'filled'; }
+    else if (humanSlots.has(i)) { li.textContent = `Player ${i + 1} — Connected`; li.className = 'filled'; }
+    else { li.textContent = `Player ${i + 1} — CPU`; li.className = 'empty'; }
+    mpSlotsEl.appendChild(li);
+  }
+}
+
+function teardownNet() {
+  if (netSession) netSession.disconnect();
+  netSession = null;
+  myKartIndex = 0;
+  humanSlots = new Set();
+  latestClientStates = {};
+  latestSnapshot = null;
+  player = karts[0];
+}
+
+document.getElementById('mp-host-btn').addEventListener('click', () => {
+  teardownNet();
+  netSession = new NetSession();
+  humanSlots = new Set();
+  showMpPanel(mpHostPanel);
+  mpCodeEl.textContent = '.....';
+  renderHostSlots();
+
+  netSession.onHostReady = (code) => { mpCodeEl.textContent = code; };
+  netSession.onError = (msg) => { showToast(msg); showMpPanel(introMainEl); teardownNet(); };
+  netSession.onPlayerJoined = (slot) => { humanSlots.add(slot); renderHostSlots(); };
+  netSession.onPlayerLeft = (slot) => {
+    humanSlots.delete(slot);
+    delete latestClientStates[slot];
+    applyDifficultyToSlot(slot, currentDifficulty);
+    renderHostSlots();
+  };
+  netSession.onHostState = (slot, state) => { latestClientStates[slot] = state; };
+  netSession.host();
+});
+
+document.getElementById('mp-host-cancel-btn').addEventListener('click', () => {
+  teardownNet();
+  showMpPanel(introMainEl);
+});
+
+document.getElementById('mp-host-start-btn').addEventListener('click', () => {
+  netSession.broadcastStart();
+  beginRaceUi();
+});
+
+document.getElementById('mp-join-btn').addEventListener('click', () => {
+  teardownNet();
+  showMpPanel(mpJoinPanel);
+  mpJoinStatusEl.textContent = '';
+  document.getElementById('mp-code-input').value = '';
+});
+
+document.getElementById('mp-join-cancel-btn').addEventListener('click', () => {
+  teardownNet();
+  showMpPanel(introMainEl);
+});
+document.getElementById('mp-waiting-cancel-btn').addEventListener('click', () => {
+  teardownNet();
+  showMpPanel(introMainEl);
+});
+
+const mpCodeInput = document.getElementById('mp-code-input');
+mpCodeInput.addEventListener('input', () => { mpCodeInput.value = mpCodeInput.value.toUpperCase(); });
+
+document.getElementById('mp-join-connect-btn').addEventListener('click', () => {
+  const code = mpCodeInput.value.trim();
+  if (code.length < 5) { mpJoinStatusEl.textContent = 'Enter the 5-character code.'; return; }
+  teardownNet();
+  netSession = new NetSession();
+  mpJoinStatusEl.textContent = 'Connecting…';
+
+  netSession.onError = (msg) => {
+    showMpPanel(mpJoinPanel);
+    mpJoinStatusEl.textContent = msg;
+  };
+  netSession.onConnected = (kartIndex) => {
+    myKartIndex = kartIndex;
+    player = karts[myKartIndex];
+    mpMySlotEl.textContent = String(kartIndex + 1);
+    showMpPanel(mpWaitingPanel);
+  };
+  netSession.onSnapshot = (kartsState, hostHumanSlots) => {
+    latestSnapshot = kartsState;
+    if (hostHumanSlots) humanSlots = new Set(hostHumanSlots);
+  };
+  netSession.onHostStart = () => { beginRaceUi(); };
+  netSession.join(code);
+});
 
 // ---------------- Input ----------------
 const input = { up: false, down: false, left: false, right: false, drift: false, steer: null };
@@ -114,7 +237,7 @@ function setKey(code, val) {
     case 'ArrowLeft': case 'KeyA': input.left = val; break;
     case 'ArrowRight': case 'KeyD': input.right = val; break;
     case 'ShiftLeft': case 'ShiftRight': case 'Space': input.drift = val; break;
-    case 'KeyR': if (val && gameState === 'finished') restartRace(); break;
+    case 'KeyR': if (val && gameState === 'finished' && !netSession) restartRace(); break;
   }
 }
 
@@ -298,11 +421,16 @@ if (isTouchDevice) {
 }
 const touchControlsEl = document.getElementById('touch-controls');
 
-document.getElementById('start-btn').addEventListener('click', () => {
+function beginRaceUi() {
   introEl.classList.add('hidden');
   hud.classList.add('active');
   touchControlsEl.classList.add('active');
   startCountdown();
+}
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  teardownNet();
+  beginRaceUi();
 });
 
 function startCountdown() {
@@ -331,12 +459,15 @@ function finishRace() {
   resultsList.innerHTML = '';
   standingsSnapshot.forEach((k, i) => {
     const li = document.createElement('li');
-    if (k.isPlayer) {
+    const idx = karts.indexOf(k);
+    if (k === player) {
       const t = k.finishTime / 1000;
       const mm = String(Math.floor(t / 60)).padStart(2, '0');
       const ss = (t % 60).toFixed(2).padStart(5, '0');
       li.textContent = `${ordinal(i + 1)} — You — ${mm}:${ss}`;
       li.style.color = '#ffd23f';
+    } else if (netSession && humanSlots.has(idx)) {
+      li.textContent = `${ordinal(i + 1)} — Player ${idx + 1}`;
     } else {
       li.textContent = `${ordinal(i + 1)} — CPU Racer`;
     }
@@ -377,10 +508,14 @@ function restartRace() {
   startCountdown();
 }
 
-function checkBoostPads() {
+// Only checked against karts this client actually simulates: in multiplayer,
+// a remote human's or the host's own kart's boost state comes over the
+// network, so touching a pad locally for one of those would just get
+// overwritten by the next snapshot anyway.
+function checkBoostPads(activeKarts) {
   for (const pad of track.boostPads) {
     if (!pad.active) continue;
-    for (const k of karts) {
+    for (const k of activeKarts) {
       const d = Math.hypot(k.position.x - pad.position.x, k.position.z - pad.position.z);
       if (d < 2.3) {
         k.boostTimer = 1.1;
@@ -398,6 +533,8 @@ function checkBoostPads() {
 const clock = new THREE.Clock();
 let wasBlocked = false;
 let blockStartedAt = 0;
+let netTickAccumulator = 0;
+const NET_TICK_INTERVAL = 1 / 15; // send/broadcast state 15x/sec — plenty for kart positions, keeps bandwidth trivial
 
 function animate() {
   requestAnimationFrame(animate);
@@ -408,24 +545,71 @@ function animate() {
   if (!blocked && wasBlocked && raceStartTime !== null) raceStartTime += performance.now() - blockStartedAt;
   wasBlocked = blocked;
 
-  if (gameState === 'racing' && !blocked) {
-    if (tiltEnabled && tiltNeutral !== null) {
-      const norm = THREE.MathUtils.clamp((tiltNeutral - tiltRaw) / TILT_MAX_ANGLE, -1, 1);
-      input.steer = Math.sign(norm) * Math.pow(Math.abs(norm), TILT_CURVE_EXPONENT);
-    } else {
-      input.steer = null;
-    }
-    player.updatePlayer(dt, input, track);
-    for (let i = 1; i < karts.length; i++) karts[i].updateAI(dt, track);
-    resolveKartCollisions(karts);
-    track.updateBoostPads(dt);
-    checkBoostPads();
+  // In multiplayer, other participants' races keep going even after this
+  // client's own kart has finished — so the network relay and (for the
+  // host) AI simulation must not stop just because gameState flipped to
+  // 'finished' here. Only this client's own input/physics stop.
+  const netKeepsRunning = netSession && gameState === 'finished';
 
-    if (player.laps >= TOTAL_LAPS && player.finishTime === null) {
-      player.finishTime = performance.now() - raceStartTime;
-      finishRace();
+  if ((gameState === 'racing' || netKeepsRunning) && !blocked) {
+    if (gameState === 'racing') {
+      if (tiltEnabled && tiltNeutral !== null) {
+        const norm = THREE.MathUtils.clamp((tiltNeutral - tiltRaw) / TILT_MAX_ANGLE, -1, 1);
+        input.steer = Math.sign(norm) * Math.pow(Math.abs(norm), TILT_CURVE_EXPONENT);
+      } else {
+        input.steer = null;
+      }
+      player.updatePlayer(dt, input, track);
     }
-    updateHud();
+
+    let activeKarts; // karts this client actually simulates locally, for boost-pad checks
+    if (netSession && netSession.isHost) {
+      const aiIndices = [];
+      for (let i = 0; i < karts.length; i++) {
+        if (i === myKartIndex) continue;
+        if (humanSlots.has(i)) {
+          const st = latestClientStates[i];
+          if (st) karts[i].applyNetworkState(st, track);
+        } else {
+          karts[i].updateAI(dt, track);
+          aiIndices.push(i);
+        }
+      }
+      activeKarts = [player, ...aiIndices.map(i => karts[i])];
+      resolveKartCollisions(karts, new Set([myKartIndex, ...aiIndices]));
+    } else if (netSession && !netSession.isHost) {
+      for (let i = 0; i < karts.length; i++) {
+        if (i === myKartIndex) continue;
+        const st = latestSnapshot && latestSnapshot[i];
+        if (st) karts[i].applyNetworkState(st, track);
+      }
+      activeKarts = [player];
+      resolveKartCollisions(karts, new Set([myKartIndex]));
+    } else {
+      for (let i = 0; i < karts.length; i++) { if (i !== myKartIndex) karts[i].updateAI(dt, track); }
+      activeKarts = karts;
+      resolveKartCollisions(karts);
+    }
+
+    track.updateBoostPads(dt);
+    checkBoostPads(activeKarts);
+
+    if (netSession) {
+      netTickAccumulator += dt;
+      if (netTickAccumulator >= NET_TICK_INTERVAL) {
+        netTickAccumulator = 0;
+        if (netSession.isHost) netSession.broadcastSnapshot(karts.map(k => k.getNetworkState()), [...humanSlots]);
+        else netSession.sendState(karts[myKartIndex].getNetworkState());
+      }
+    }
+
+    if (gameState === 'racing') {
+      if (player.laps >= TOTAL_LAPS && player.finishTime === null) {
+        player.finishTime = performance.now() - raceStartTime;
+        finishRace();
+      }
+      updateHud();
+    }
   } else if (gameState === 'countdown' && !blocked) {
     track.updateBoostPads(dt);
   }

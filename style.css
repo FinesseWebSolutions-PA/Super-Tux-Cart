@@ -214,6 +214,88 @@ body.touch #hud-bottom-right {
   color: #1a1a1a;
   border-color: #ffd23f;
 }
+
+#intro-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#mp-menu {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.mp-divider {
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.mp-menu-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.mp-panel {
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+#intro .mp-panel:not(.hidden) {
+  display: flex;
+}
+
+.tilt-btn.mp-primary {
+  background: #ffd23f;
+  color: #1a1a1a;
+  border-color: #ffd23f;
+}
+
+#mp-code {
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: 8px;
+  color: #ffd23f;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px 24px;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 210, 63, 0.5);
+}
+
+#mp-slots {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.9;
+  min-width: 220px;
+}
+#mp-slots li.filled { color: #7CFF9E; }
+#mp-slots li.empty { opacity: 0.55; }
+
+#mp-code-input {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  text-align: center;
+  text-transform: uppercase;
+  width: 160px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+}
+
+#mp-join-status {
+  min-height: 20px;
+  font-size: 14px;
+  opacity: 0.85;
+}
 #start-btn {
   margin-top: 32px;
   padding: 14px 42px;
