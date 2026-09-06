@@ -11,6 +11,10 @@ const KART_PHYSICS = {
   offTrackFactor: 0.42,
 };
 
+const KART_RADIUS = 1.05;
+const BUMP_RESTITUTION = 9;
+const BUMP_DECAY = 3.5;
+
 function buildKartMesh(bodyColor) {
   const group = new THREE.Group();
 
@@ -77,6 +81,8 @@ class Kart {
     this.driftTime = 0;
     this.boostTimer = 0;
     this.boostMultiplier = 1;
+
+    this.bumpVelocity = new THREE.Vector3();
 
     this.lastIndex = null;
     this.hasStarted = true; // false = spawned behind the line; its first line-crossing doesn't count as a lap
@@ -156,6 +162,9 @@ class Kart {
     const forward = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
     this.position.addScaledVector(forward, this.speed * dt);
 
+    this.position.addScaledVector(this.bumpVelocity, dt);
+    this.bumpVelocity.multiplyScalar(Math.max(0, 1 - BUMP_DECAY * dt));
+
     for (const w of this.wheels) w.rotation.x -= this.speed * dt * 2.2;
     const steerVisual = THREE.MathUtils.clamp(steerInput * 0.5, -0.5, 0.5);
     for (const w of this.frontWheels) w.rotation.y = steerVisual;
@@ -193,5 +202,44 @@ class Kart {
 
   get progress() {
     return this.laps * 100000 + (this.lastIndex || 0);
+  }
+}
+
+// Circle-circle collision between every kart pair: separates overlapping
+// karts and kicks both away from the impact along the contact normal, so
+// bumping another kart actually bounces you off it instead of sliding through.
+function resolveKartCollisions(karts) {
+  const minDist = KART_RADIUS * 2;
+  for (let i = 0; i < karts.length; i++) {
+    for (let j = i + 1; j < karts.length; j++) {
+      const a = karts[i];
+      const b = karts[j];
+      const dx = b.position.x - a.position.x;
+      const dz = b.position.z - a.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist >= minDist || dist < 1e-4) continue;
+
+      const nx = dx / dist;
+      const nz = dz / dist;
+      const overlap = minDist - dist;
+
+      a.position.x -= nx * overlap * 0.5;
+      a.position.z -= nz * overlap * 0.5;
+      b.position.x += nx * overlap * 0.5;
+      b.position.z += nz * overlap * 0.5;
+
+      const closingSpeed = Math.max(Math.abs(a.speed), Math.abs(b.speed), 4);
+      const impulse = Math.min(BUMP_RESTITUTION, closingSpeed * 0.5);
+      a.bumpVelocity.x -= nx * impulse;
+      a.bumpVelocity.z -= nz * impulse;
+      b.bumpVelocity.x += nx * impulse;
+      b.bumpVelocity.z += nz * impulse;
+
+      a.speed *= 0.8;
+      b.speed *= 0.8;
+
+      a._syncMesh();
+      b._syncMesh();
+    }
   }
 }

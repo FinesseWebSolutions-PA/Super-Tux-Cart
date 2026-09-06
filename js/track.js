@@ -5,20 +5,24 @@ function makeAsphaltTexture() {
   const c = document.createElement('canvas');
   c.width = 64; c.height = 256;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#3a3d42';
+  ctx.fillStyle = '#6b7078';
   ctx.fillRect(0, 0, 64, 256);
-  for (let i = 0; i < 400; i++) {
-    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.04})`;
+  for (let i = 0; i < 500; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.05})`;
+    ctx.fillRect(Math.random() * 64, Math.random() * 256, 2, 2);
+  }
+  for (let i = 0; i < 250; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.06})`;
     ctx.fillRect(Math.random() * 64, Math.random() * 256, 2, 2);
   }
   // center dashed line
-  ctx.fillStyle = '#f2d24b';
-  ctx.fillRect(28, 0, 8, 110);
-  ctx.fillRect(28, 146, 8, 110);
+  ctx.fillStyle = '#ffd93d';
+  ctx.fillRect(27, 0, 10, 110);
+  ctx.fillRect(27, 146, 10, 110);
   // edge lines
-  ctx.fillStyle = '#e8e8e8';
-  ctx.fillRect(4, 0, 5, 256);
-  ctx.fillRect(55, 0, 5, 256);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(2, 0, 8, 256);
+  ctx.fillRect(54, 0, 8, 256);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
@@ -31,7 +35,7 @@ function makeWallTexture() {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#d43b3b';
   ctx.fillRect(0, 0, 32, 32);
-  ctx.fillStyle = '#f2f2f2';
+  ctx.fillStyle = '#f7f7f7';
   ctx.fillRect(0, 0, 16, 32);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = THREE.RepeatWrapping;
@@ -42,12 +46,12 @@ function makeWallTexture() {
 class Track {
   constructor() {
     this.width = 15;
-    this.segments = 260;
+    this.segments = 440;
 
     const rawPoints = [
-      [0, -62], [35, -74], [72, -60], [92, -28], [88, 12],
-      [58, 30], [40, 14], [20, 20], [4, 42], [-28, 58],
-      [-64, 46], [-88, 10], [-84, -32], [-56, -58], [-24, -50],
+      [0, -105], [60, -126], [122, -102], [156, -48], [172, -14], [150, 20],
+      [99, 51], [68, 24], [34, 34], [7, 71], [-48, 99], [-109, 78],
+      [-150, 17], [-165, -18], [-143, -54], [-95, -99], [-41, -85],
     ].map(([x, z]) => new THREE.Vector3(x, 0, z));
 
     this.curve = new THREE.CatmullRomCurve3(rawPoints, true, 'catmullrom', 0.5);
@@ -56,23 +60,57 @@ class Track {
     this.tangents = this.points.map((_, i) => this.curve.getTangentAt(i / this.segments).normalize());
     this.sides = this.tangents.map(t => new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), t).normalize());
 
+    this.lakeCenter = new THREE.Vector2(230, 80);
+    this.lakeRadius = 46;
+
     this.group = new THREE.Group();
     this._buildGround();
+    this._buildLake();
     this._buildRoad();
     this._buildWalls();
     this._buildStartLine();
     this._buildScenery();
+    this._buildMountains();
     this._buildBoostPads();
   }
 
   _buildGround() {
-    const geo = new THREE.PlaneGeometry(700, 700);
-    const mat = new THREE.MeshLambertMaterial({ color: 0x4c9a3f });
+    const geo = new THREE.PlaneGeometry(1200, 1200);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x479238 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.y = -0.05;
+    mesh.position.y = -0.3;
     mesh.receiveShadow = true;
     this.group.add(mesh);
+  }
+
+  _buildLake() {
+    const geo = new THREE.CircleGeometry(this.lakeRadius, 40);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x2f7fc1, transparent: true, opacity: 0.88 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(this.lakeCenter.x, -0.15, this.lakeCenter.y);
+    this.group.add(mesh);
+
+    const shoreGeo = new THREE.RingGeometry(this.lakeRadius, this.lakeRadius + 3, 40);
+    const shoreMat = new THREE.MeshLambertMaterial({ color: 0xd8c68a });
+    const shore = new THREE.Mesh(shoreGeo, shoreMat);
+    shore.rotation.x = -Math.PI / 2;
+    shore.position.set(this.lakeCenter.x, -0.2, this.lakeCenter.y);
+    this.group.add(shore);
+  }
+
+  _isClearOfTrack(x, z, margin) {
+    let minDist = Infinity;
+    for (let i = 0; i < this.points.length; i += 4) {
+      const d = Math.hypot(this.points[i].x - x, this.points[i].z - z);
+      if (d < minDist) minDist = d;
+    }
+    return minDist > this.width / 2 + margin;
+  }
+
+  _isClearOfLake(x, z, margin) {
+    return Math.hypot(x - this.lakeCenter.x, z - this.lakeCenter.y) > this.lakeRadius + margin;
   }
 
   _buildRoad() {
@@ -105,8 +143,7 @@ class Track {
     geo.computeVertexNormals();
 
     const tex = makeAsphaltTexture();
-    tex.repeat.set(1, N / 8);
-    const mat = new THREE.MeshLambertMaterial({ map: tex });
+    const mat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     this.group.add(mesh);
@@ -114,11 +151,10 @@ class Track {
 
   _buildWalls() {
     const tex = makeWallTexture();
-    tex.repeat.set(this.segments / 6, 1);
-    const mat = new THREE.MeshLambertMaterial({ map: tex });
+    const mat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide });
 
     [1, -1].forEach(sign => {
-      const half = this.width / 2 + 0.35;
+      const half = this.width / 2 + 0.2;
       const N = this.segments;
       const positions = [];
       const uvs = [];
@@ -128,7 +164,7 @@ class Track {
         const p = this.points[idx];
         const side = this.sides[idx];
         const base = new THREE.Vector3().copy(p).addScaledVector(side, half * sign);
-        positions.push(base.x, 0.05, base.z, base.x, 0.55, base.z);
+        positions.push(base.x, 0.12, base.z, base.x, 0.75, base.z);
         const u = i / 6;
         uvs.push(u, 0, u, 1);
       }
@@ -168,7 +204,7 @@ class Track {
     mesh.rotation.x = -Math.PI / 2;
     const angle = Math.atan2(tangent.x, tangent.z);
     mesh.rotation.z = -angle;
-    mesh.position.set(p.x, 0.03, p.z);
+    mesh.position.set(p.x, 0.08, p.z);
     this.group.add(mesh);
 
     // start banner posts
@@ -186,31 +222,35 @@ class Track {
   _buildScenery() {
     const trunkGeo = new THREE.CylinderGeometry(0.25, 0.3, 2, 6);
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
-    const leafGeo = new THREE.ConeGeometry(1.6, 3.2, 8);
-    const leafMat = new THREE.MeshLambertMaterial({ color: 0x2e8b3d });
+    const pineLeafGeo = new THREE.ConeGeometry(1.6, 3.2, 8);
+    const pineLeafMat = new THREE.MeshLambertMaterial({ color: 0x2e8b3d });
+    const roundLeafGeo = new THREE.SphereGeometry(1.7, 8, 6);
+    const roundLeafMat = new THREE.MeshLambertMaterial({ color: 0x5fae4a });
 
-    const count = 140;
+    const rockGeo = new THREE.DodecahedronGeometry(1.1, 0);
+    const rockMat = new THREE.MeshLambertMaterial({ color: 0x8c8c86 });
+
+    const count = 260;
+    const rockCount = 40;
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
-    const leaves = new THREE.InstancedMesh(leafGeo, leafMat, count);
+    const pineLeaves = new THREE.InstancedMesh(pineLeafGeo, pineLeafMat, count);
+    const roundLeaves = new THREE.InstancedMesh(roundLeafGeo, roundLeafMat, count);
+    const rocks = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
     trunks.castShadow = true;
-    leaves.castShadow = true;
+    pineLeaves.castShadow = true;
+    roundLeaves.castShadow = true;
+    rocks.castShadow = true;
 
     const dummy = new THREE.Object3D();
-    let placed = 0;
-    let attempts = 0;
+    let placed = 0, pineCount = 0, roundCount = 0, attempts = 0;
     while (placed < count && attempts < count * 20) {
       attempts++;
       const angle = Math.random() * Math.PI * 2;
-      const radius = 55 + Math.random() * 160;
+      const radius = 60 + Math.random() * 230;
       const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius * 0.9;
+      const z = Math.sin(angle) * radius * 0.95;
 
-      let minDist = Infinity;
-      for (let i = 0; i < this.points.length; i += 4) {
-        const d = Math.hypot(this.points[i].x - x, this.points[i].z - z);
-        if (d < minDist) minDist = d;
-      }
-      if (minDist < this.width / 2 + 6) continue;
+      if (!this._isClearOfTrack(x, z, 6) || !this._isClearOfLake(x, z, 10)) continue;
 
       const scale = 0.7 + Math.random() * 0.9;
       dummy.position.set(x, 1 * scale, z);
@@ -219,19 +259,65 @@ class Track {
       dummy.updateMatrix();
       trunks.setMatrixAt(placed, dummy.matrix);
 
-      dummy.position.set(x, (2 + 1.4) * scale, z);
-      dummy.updateMatrix();
-      leaves.setMatrixAt(placed, dummy.matrix);
+      if (Math.random() < 0.6) {
+        dummy.position.set(x, (2 + 1.4) * scale, z);
+        dummy.updateMatrix();
+        pineLeaves.setMatrixAt(pineCount, dummy.matrix);
+        pineCount++;
+      } else {
+        dummy.position.set(x, (2 + 1.3) * scale, z);
+        dummy.updateMatrix();
+        roundLeaves.setMatrixAt(roundCount, dummy.matrix);
+        roundCount++;
+      }
       placed++;
     }
     trunks.count = placed;
-    leaves.count = placed;
-    this.group.add(trunks, leaves);
+    pineLeaves.count = pineCount;
+    roundLeaves.count = roundCount;
+    this.group.add(trunks, pineLeaves, roundLeaves);
+
+    let rocksPlaced = 0;
+    attempts = 0;
+    while (rocksPlaced < rockCount && attempts < rockCount * 20) {
+      attempts++;
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 40 + Math.random() * 150;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius * 0.95;
+      if (!this._isClearOfTrack(x, z, 5) || !this._isClearOfLake(x, z, 6)) continue;
+
+      const scale = 0.6 + Math.random() * 1.1;
+      dummy.position.set(x, 0.5 * scale, z);
+      dummy.scale.set(scale, scale, scale);
+      dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      dummy.updateMatrix();
+      rocks.setMatrixAt(rocksPlaced, dummy.matrix);
+      rocksPlaced++;
+    }
+    rocks.count = rocksPlaced;
+    this.group.add(rocks);
+  }
+
+  _buildMountains() {
+    const mat = new THREE.MeshBasicMaterial({ color: 0x9fb6d4 });
+    const count = 20;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.15;
+      const radius = 430 + Math.random() * 90;
+      const height = 90 + Math.random() * 130;
+      const base = 60 + Math.random() * 50;
+      const geo = new THREE.ConeGeometry(base, height, 5);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(Math.cos(angle) * radius, height / 2 - 6, Math.sin(angle) * radius);
+      mesh.rotation.y = Math.random() * Math.PI;
+      this.group.add(mesh);
+    }
   }
 
   _buildBoostPads() {
     this.boostPads = [];
-    const padCount = 8;
+    const padCount = 10;
     const N = this.segments;
     const step = Math.floor(N / padCount);
     const geo = new THREE.TorusGeometry(1.1, 0.28, 8, 16);

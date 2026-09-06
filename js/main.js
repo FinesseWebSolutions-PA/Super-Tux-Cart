@@ -17,16 +17,21 @@ window.addEventListener('resize', setViewportHeight);
 window.addEventListener('orientationchange', setViewportHeight);
 
 const canvas = document.getElementById('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x7ec0ee);
-scene.fog = new THREE.Fog(0x7ec0ee, 120, 420);
+scene.fog = new THREE.Fog(0x7ec0ee, 150, 620);
 
-const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
+// near=0.5 (not the usual 0.1) plus a log depth buffer: the road sits only
+// fractions of a unit above the ground plane, and that gap was falling
+// below depth-buffer precision at normal driving distances — especially on
+// mobile GPUs' lower-precision buffers — making the road disappear behind
+// the grass entirely rather than just look washed out.
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.5, 1200);
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -41,10 +46,10 @@ sun.position.set(80, 120, 40);
 sun.castShadow = true;
 const shadowRes = isMobile ? 1024 : 2048;
 sun.shadow.mapSize.set(shadowRes, shadowRes);
-sun.shadow.camera.left = -140;
-sun.shadow.camera.right = 140;
-sun.shadow.camera.top = 140;
-sun.shadow.camera.bottom = -140;
+sun.shadow.camera.left = -190;
+sun.shadow.camera.right = 190;
+sun.shadow.camera.top = 190;
+sun.shadow.camera.bottom = -190;
 scene.add(sun);
 
 const track = new Track();
@@ -338,6 +343,7 @@ function restartRace() {
     k.boostTimer = 0;
     k.driftDir = 0;
     k.driftTime = 0;
+    k.bumpVelocity.set(0, 0, 0);
     k._syncMesh();
   }
   for (const pad of track.boostPads) { pad.active = true; pad.mesh.visible = true; }
@@ -382,6 +388,7 @@ function animate() {
       : null;
     player.updatePlayer(dt, input, track);
     for (let i = 1; i < karts.length; i++) karts[i].updateAI(dt, track);
+    resolveKartCollisions(karts);
     track.updateBoostPads(dt);
     checkBoostPads();
 
