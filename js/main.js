@@ -525,11 +525,11 @@ const touchControlsEl = document.getElementById('touch-controls');
 const hudRestartBtn = document.getElementById('hud-restart-btn');
 function refreshHudRestartButton() {
   if (netSession) {
-    hudRestartBtn.textContent = '✕';
+    hudRestartBtn.textContent = 'X';
     hudRestartBtn.title = 'Leave race';
     hudRestartBtn.setAttribute('aria-label', 'Leave race');
   } else {
-    hudRestartBtn.textContent = '↻';
+    hudRestartBtn.textContent = 'R';
     hudRestartBtn.title = 'Restart race';
     hudRestartBtn.setAttribute('aria-label', 'Restart race');
   }
