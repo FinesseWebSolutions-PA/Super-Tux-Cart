@@ -180,6 +180,40 @@ body.touch #hud-bottom-right {
 #intro .controls[hidden] {
   display: none;
 }
+
+#difficulty-picker {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.difficulty-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.difficulty-options {
+  display: flex;
+  gap: 8px;
+}
+.difficulty-btn {
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 16px;
+  cursor: pointer;
+}
+.difficulty-btn.selected {
+  background: #ffd23f;
+  color: #1a1a1a;
+  border-color: #ffd23f;
+}
 #start-btn {
   margin-top: 32px;
   padding: 14px 42px;

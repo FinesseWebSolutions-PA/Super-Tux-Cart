@@ -89,7 +89,8 @@ class Kart {
     this.laps = 0;
     this.finished = false;
     this.finishTime = null;
-    this.aiSkill = 0.9 + Math.random() * 0.18;
+    // Player always races at baseline; AI karts get theirs from setDifficulty() per the chosen CPU difficulty.
+    this.aiSkill = 1;
     this.aiLookahead = 9 + Math.floor(Math.random() * 4);
 
     this._syncMesh();
@@ -202,6 +203,11 @@ class Kart {
 
   get progress() {
     return this.laps * 100000 + (this.lastIndex || 0);
+  }
+
+  setDifficulty(skillMin, skillMax, lookaheadMin, lookaheadMax) {
+    this.aiSkill = skillMin + Math.random() * (skillMax - skillMin);
+    this.aiLookahead = lookaheadMin + Math.floor(Math.random() * (lookaheadMax - lookaheadMin + 1));
   }
 }
 

@@ -79,6 +79,30 @@ for (let i = 0; i < 1 + AI_COUNT; i++) {
 }
 const player = karts[0];
 
+// ---------------- CPU difficulty ----------------
+const DIFFICULTY_PRESETS = {
+  easy: { skillMin: 0.70, skillMax: 0.82, lookMin: 10, lookMax: 14 },
+  normal: { skillMin: 0.90, skillMax: 1.08, lookMin: 9, lookMax: 12 },
+  hard: { skillMin: 1.08, skillMax: 1.24, lookMin: 7, lookMax: 10 },
+};
+let currentDifficulty = 'normal';
+function applyDifficulty(level) {
+  const preset = DIFFICULTY_PRESETS[level] || DIFFICULTY_PRESETS.normal;
+  currentDifficulty = level;
+  for (let i = 1; i < karts.length; i++) {
+    karts[i].setDifficulty(preset.skillMin, preset.skillMax, preset.lookMin, preset.lookMax);
+  }
+}
+applyDifficulty(currentDifficulty);
+
+for (const btn of document.querySelectorAll('.difficulty-btn')) {
+  btn.addEventListener('click', () => {
+    for (const b of document.querySelectorAll('.difficulty-btn')) b.classList.remove('selected');
+    btn.classList.add('selected');
+    applyDifficulty(btn.dataset.difficulty);
+  });
+}
+
 // ---------------- Input ----------------
 const input = { up: false, down: false, left: false, right: false, drift: false, steer: null };
 window.addEventListener('keydown', e => setKey(e.code, true));
@@ -129,7 +153,8 @@ updateOrientationGate();
 
 // ---------------- Tilt steering (opt-in, falls back to buttons) ----------------
 const TILT_SUPPORTED = typeof window.DeviceOrientationEvent !== 'undefined';
-const TILT_MAX_ANGLE = 22; // degrees of tilt for full steering lock
+const TILT_MAX_ANGLE = 26; // degrees of tilt for full steering lock
+const TILT_CURVE_EXPONENT = 0.6; // <1 = progressive: a given tilt produces more steering than a flat linear mapping would, so less physical tilt is needed for a strong turn
 let tiltEnabled = false;
 let tiltNeutral = null;
 let tiltRaw = 0;
@@ -347,6 +372,7 @@ function restartRace() {
     k._syncMesh();
   }
   for (const pad of track.boostPads) { pad.active = true; pad.mesh.visible = true; }
+  applyDifficulty(currentDifficulty);
   raceStartTime = null;
   startCountdown();
 }
@@ -383,9 +409,12 @@ function animate() {
   wasBlocked = blocked;
 
   if (gameState === 'racing' && !blocked) {
-    input.steer = (tiltEnabled && tiltNeutral !== null)
-      ? THREE.MathUtils.clamp((tiltNeutral - tiltRaw) / TILT_MAX_ANGLE, -1, 1)
-      : null;
+    if (tiltEnabled && tiltNeutral !== null) {
+      const norm = THREE.MathUtils.clamp((tiltNeutral - tiltRaw) / TILT_MAX_ANGLE, -1, 1);
+      input.steer = Math.sign(norm) * Math.pow(Math.abs(norm), TILT_CURVE_EXPONENT);
+    } else {
+      input.steer = null;
+    }
     player.updatePlayer(dt, input, track);
     for (let i = 1; i < karts.length; i++) karts[i].updateAI(dt, track);
     resolveKartCollisions(karts);
