@@ -614,6 +614,9 @@ hudRestartBtn.addEventListener('click', () => {
   else restartRace();
 });
 
+const hudHomeBtn = document.getElementById('hud-home-btn');
+hudHomeBtn.addEventListener('click', () => returnToMenu());
+
 function beginRaceUi() {
   introEl.classList.add('hidden');
   hud.classList.add('active');
@@ -663,7 +666,6 @@ function finishRace() {
     resultsList.appendChild(li);
   });
   resultsPlayAgainBtn.classList.toggle('hidden', !!netSession);
-  resultsMenuBtn.classList.toggle('hidden', !netSession);
   resultsEl.classList.remove('hidden');
 }
 
